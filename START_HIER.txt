@@ -1,0 +1,10 @@
+TFT JARVIS COACH V0.2
+
+Nach der Installation:
+1. App öffnen.
+2. OpenAI API-Key eintragen.
+3. START COACHING.
+4. Android-Bildschirmfreigabe und Overlay erlauben.
+5. Im Spiel: MERKEN = sofort analysieren, AUTO = wiederholt analysieren, RESET = Match-Kurzgedächtnis löschen.
+
+Die Coach-Antwort erscheint im Overlay und wird auf Deutsch vorgelesen.
