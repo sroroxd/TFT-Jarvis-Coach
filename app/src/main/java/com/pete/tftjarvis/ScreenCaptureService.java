@@ -21,6 +21,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.util.Base64;
@@ -54,6 +55,9 @@ public class ScreenCaptureService extends Service {
     private final Handler mainHandler = new Handler();
 
     private volatile String latestFrameBase64;
+    private volatile long latestFrameTime;
+    private volatile long generation;
+    private volatile boolean destroyed;
     private String apiKey = "";
     private String model = "gpt-6-luna";
     private String previousState = "";
@@ -136,7 +140,9 @@ public class ScreenCaptureService extends Service {
     private void analyzeCurrentFrame() {
         if (!analyzing.compareAndSet(false, true)) return;
         final String frame = latestFrameBase64;
-        if (frame == null || frame.trim().isEmpty()) {
+        final long frameTime = latestFrameTime;
+        final long requestGeneration = generation;
+        if (frame == null || frame.trim().isEmpty() || SystemClock.elapsedRealtime() - frameTime > 4000L) {
             analyzing.set(false);
             setCoachText("Noch kein Bild");
             return;
@@ -151,8 +157,10 @@ public class ScreenCaptureService extends Service {
         aiExecutor.execute(() -> {
             try {
                 OpenAIClient.CoachResult result = OpenAIClient.coach(apiKey, model, frame, previousState);
-                if (result.state != null && !result.state.trim().isEmpty()) previousState = result.state;
-                publishCall(result.call);
+                if (!destroyed && requestGeneration == generation && SystemClock.elapsedRealtime() - frameTime <= 10000L) {
+                    if (result.state != null && !result.state.trim().isEmpty()) previousState = result.state;
+                    publishCall(result.call, requestGeneration);
+                }
             } catch (Exception e) {
                 String msg = e.getMessage() == null ? "Analysefehler" : e.getMessage();
                 if (msg.length() > 95) msg = msg.substring(0, 95) + "…";
@@ -163,8 +171,9 @@ public class ScreenCaptureService extends Service {
         });
     }
 
-    private void publishCall(String call) {
+    private void publishCall(String call, long requestGeneration) {
         mainHandler.post(() -> {
+            if (destroyed || requestGeneration != generation) return;
             setCoachText(call);
             if (tts != null) tts.speak(call, TextToSpeech.QUEUE_FLUSH, null, "tft-call");
             NotificationManager nm = getSystemService(NotificationManager.class);
@@ -238,6 +247,7 @@ public class ScreenCaptureService extends Service {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             upload.compress(Bitmap.CompressFormat.JPEG, 78, out);
             latestFrameBase64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+            latestFrameTime = SystemClock.elapsedRealtime();
 
             if (upload != cropped) upload.recycle();
             if (cropped != padded) cropped.recycle();
@@ -290,6 +300,7 @@ public class ScreenCaptureService extends Service {
         resetButton.setText("RESET");
         resetButton.setAllCaps(false);
         resetButton.setOnClickListener(v -> {
+            generation++;
             previousState = "";
             setCoachText("Gedächtnis zurückgesetzt");
         });
@@ -366,6 +377,8 @@ public class ScreenCaptureService extends Service {
 
     @Override
     public void onDestroy() {
+        destroyed = true;
+        generation++;
         autoEnabled = false;
         mainHandler.removeCallbacks(autoTick);
         instance = null;
