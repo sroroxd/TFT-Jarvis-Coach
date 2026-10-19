@@ -58,6 +58,7 @@ public class ScreenCaptureService extends Service {
     private volatile long latestFrameTime;
     private volatile long generation;
     private volatile boolean destroyed;
+    private volatile boolean manualPending;
     private String apiKey = "";
     private String model = "gpt-6-luna";
     private String previousState = "";
@@ -134,7 +135,15 @@ public class ScreenCaptureService extends Service {
 
     public static void requestAnalysis() {
         ScreenCaptureService s = instance;
-        if (s != null) s.analyzeCurrentFrame();
+        if (s != null) s.requestManualAnalysis();
+    }
+
+    private void requestManualAnalysis() {
+        if (analyzing.get()) {
+            manualPending = true;
+            return;
+        }
+        analyzeCurrentFrame();
     }
 
     private void analyzeCurrentFrame() {
@@ -167,6 +176,10 @@ public class ScreenCaptureService extends Service {
                 setCoachText(msg);
             } finally {
                 analyzing.set(false);
+                if (manualPending && !destroyed) {
+                    manualPending = false;
+                    mainHandler.post(this::analyzeCurrentFrame);
+                }
             }
         });
     }
@@ -287,7 +300,7 @@ public class ScreenCaptureService extends Service {
         Button rememberButton = new Button(this);
         rememberButton.setText("MERKEN");
         rememberButton.setAllCaps(false);
-        rememberButton.setOnClickListener(v -> analyzeCurrentFrame());
+        rememberButton.setOnClickListener(v -> requestManualAnalysis());
         overlay.addView(rememberButton);
 
         autoButton = new Button(this);
@@ -301,6 +314,7 @@ public class ScreenCaptureService extends Service {
         resetButton.setAllCaps(false);
         resetButton.setOnClickListener(v -> {
             generation++;
+            manualPending = false;
             previousState = "";
             setCoachText("Gedächtnis zurückgesetzt");
         });
