@@ -122,7 +122,7 @@ public class MainActivity extends Activity {
             service.putExtra(ScreenCaptureService.EXTRA_MODEL, modelInput.getText().toString().trim());
             service.putExtra(ScreenCaptureService.EXTRA_INTERVAL_SECONDS, readInterval());
             startForegroundService(service);
-            status("Aktiv – TFT öffnen, MERKEN drücken");
+            status("Aktiv – TFT öffnen, AUTO für Live-Coaching einschalten");
         } else {
             status("Bildschirmfreigabe nicht erteilt");
         }
