@@ -52,17 +52,28 @@ public final class GeminiClient {
             String base64Jpeg,
             String previousState
     ) throws Exception {
+        return coach(apiKey, requestedModel, base64Jpeg, null, null, previousState);
+    }
+
+    public static OpenAIClient.CoachResult coach(
+            String apiKey,
+            String requestedModel,
+            String base64Jpeg,
+            String detailBase64Jpeg,
+            String detailLabel,
+            String previousState
+    ) throws Exception {
         String primary = normalizeModel(requestedModel);
 
         try {
-            return call(primary, apiKey, base64Jpeg, previousState,
+            return call(primary, apiKey, base64Jpeg, detailBase64Jpeg, detailLabel, previousState,
                     FALLBACK_MODEL.equals(primary) ? FALLBACK_READ_TIMEOUT_MS : PRIMARY_READ_TIMEOUT_MS);
         } catch (SocketTimeoutException timeout) {
             if (FALLBACK_MODEL.equals(primary)) {
                 throw new Exception("Gemini antwortet gerade zu langsam – erneut versuchen");
             }
             try {
-                return call(FALLBACK_MODEL, apiKey, base64Jpeg, previousState, FALLBACK_READ_TIMEOUT_MS);
+                return call(FALLBACK_MODEL, apiKey, base64Jpeg, detailBase64Jpeg, detailLabel, previousState, FALLBACK_READ_TIMEOUT_MS);
             } catch (SocketTimeoutException secondTimeout) {
                 throw new Exception("Gemini antwortet gerade zu langsam – erneut versuchen");
             } catch (ApiException second) {
@@ -76,7 +87,7 @@ public final class GeminiClient {
             }
 
             try {
-                return call(FALLBACK_MODEL, apiKey, base64Jpeg, previousState, FALLBACK_READ_TIMEOUT_MS);
+                return call(FALLBACK_MODEL, apiKey, base64Jpeg, detailBase64Jpeg, detailLabel, previousState, FALLBACK_READ_TIMEOUT_MS);
             } catch (SocketTimeoutException timeout) {
                 throw new Exception("Gemini antwortet gerade zu langsam – erneut versuchen");
             } catch (ApiException second) {
@@ -99,6 +110,8 @@ public final class GeminiClient {
             String model,
             String apiKey,
             String base64Jpeg,
+            String detailBase64Jpeg,
+            String detailLabel,
             String previousState,
             int readTimeoutMs
     ) throws Exception {
@@ -124,6 +137,22 @@ public final class GeminiClient {
                 .put("mime_type", "image/jpeg")
                 .put("resolution", "medium")
                 .put("data", base64Jpeg));
+
+        if (detailBase64Jpeg != null && !detailBase64Jpeg.trim().isEmpty()) {
+            String label = detailLabel == null || detailLabel.trim().isEmpty()
+                    ? "Detailausschnitt"
+                    : detailLabel.trim();
+            content.put(new JSONObject()
+                    .put("type", "text")
+                    .put("text", "Zusätzlicher Zoom aus DEMSELBEN aktuellen Screenshot: " + label
+                            + ". Nur zur besseren Lesbarkeit kleiner HUD-/Unit-Details. "
+                            + "Das Vollbild bleibt die autoritative Quelle; ignoriere den Zoom, wenn er zur aktuellen Phase nicht passt."));
+            content.put(new JSONObject()
+                    .put("type", "image")
+                    .put("mime_type", "image/jpeg")
+                    .put("resolution", "high")
+                    .put("data", detailBase64Jpeg));
+        }
 
         JSONArray input = new JSONArray();
         input.put(new JSONObject()
