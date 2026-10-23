@@ -108,6 +108,7 @@ public final class OpenAIClient {
 
         URL url = new URL("https://api.openai.com/v1/responses");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        try {
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(15000);
         conn.setReadTimeout(45000);
@@ -281,7 +282,6 @@ public final class OpenAIClient {
         String retryAfter = conn.getHeaderField("Retry-After");
         InputStream stream = code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream();
         String raw = readAll(stream);
-        conn.disconnect();
         if (code < 200 || code >= 300) {
             if (code == 429 && isRetryableRateLimit(raw)) {
                 throw new RateLimitException(parseRetryAfterSeconds(retryAfter));
@@ -337,6 +337,9 @@ public final class OpenAIClient {
                     new ArrayList<>(), new ArrayList<>(), new ArrayList<>(),
                     new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), "", "",
                     "", "", "", "NIEDRIG", false, "");
+        }
+        } finally {
+            conn.disconnect();
         }
     }
 
