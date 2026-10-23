@@ -177,11 +177,19 @@ public final class GeminiClient {
 
                 Erkenne eine Phase: VOR_MATCH, PLANUNG, SHOP, AUGMENTIERUNG, KARUSSELL, KAMPF oder UNKLAR.
 
+                Phasen-Erkennung:
+                - VOR_MATCH umfasst ausdrücklich den TFT-Homescreen/Lobby-Bildschirm vor einer Partie.
+                - Wenn typische Homescreen-Elemente sichtbar sind, z. B. SPIELEN, SHOP, AUSRÜSTUNGEN,
+                  FEEDBACK SENDEN, Patchnotizen, Battlepass oder Chibi-/Shop-Kacheln, ist phase=VOR_MATCH.
+                - Ein klar erkennbarer TFT-Homescreen ist NICHT UNKLAR, nur weil noch kein Board sichtbar ist.
+                - Auf dem Homescreen: call="TFT-Homescreen erkannt", priority=INFO, confidence=HOCH.
+                - UNKLAR nur verwenden, wenn weder TFT-Homescreen noch eine Matchphase sicher erkennbar ist.
+
                 Harte Regeln:
                 - Das aktuelle Bild ist die primäre Wahrheit und überschreibt widersprechenden alten Status.
                 - Nutze nur sicher sichtbare Fakten. Erfinde niemals Champions, Items, Augments, Attribute, Gold, Leben, Shop oder Gegnerdaten.
                 - Bei entscheidender Unsicherheit: call = "Nicht sicher erkennbar".
-                - VOR_MATCH: nur Navigation. KAMPF: keine erfundenen Kauf-, Roll-, Level- oder Itemaktionen.
+                - VOR_MATCH: nur Navigation; keine Matchstrategie erfinden. KAMPF: keine erfundenen Kauf-, Roll-, Level- oder Itemaktionen.
                 - Priorität: zeitkritische Aktion > Boardstärke/Synergien/Carry/Tank/Items > Econ/Level/Reroll/Pivot.
                 - call: maximal drei unmittelbar sinnvolle Aktionen, höchstens 16 deutsche Wörter.
                 - plan: höchstens 32 deutsche Wörter.
