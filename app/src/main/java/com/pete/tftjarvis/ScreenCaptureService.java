@@ -57,6 +57,8 @@ public class ScreenCaptureService extends Service {
     private final ExecutorService aiExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean analyzing = new AtomicBoolean(false);
     private final AtomicBoolean awaitingCleanFrame = new AtomicBoolean(false);
+    private final ManualRequestLatch pendingManualRequest = new ManualRequestLatch();
+    private final AtomicLong captureSequence = new AtomicLong(0L);
     private final Handler mainHandler = new Handler();
     private final SmartFrameDetector smartFrameDetector = new SmartFrameDetector();
     private final LocalHudPerception localHudPerception = new LocalHudPerception();
@@ -183,13 +185,23 @@ public class ScreenCaptureService extends Service {
     }
 
     private void beginAnalysis(boolean manual) {
-        long now = System.currentTimeMillis();
-        if (manual) {
-            if (now - lastAnalyzeTapAt < 1000L) return;
-            lastAnalyzeTapAt = now;
-        }
+        beginAnalysis(manual, false);
+    }
 
-        if (!analyzing.compareAndSet(false, true)) return;
+    private void beginAnalysis(boolean manual, boolean queued) {
+        long now = System.currentTimeMillis();
+        // A manual tap made during another request is never lost to debounce.
+        if (manual && analyzing.get()) {
+            pendingManualRequest.enqueue();
+            setCoachText("Manuelle Analyse vorgemerkt");
+            return;
+        }
+        if (manual && !queued && now - lastAnalyzeTapAt < 1000L) return;
+        if (!analyzing.compareAndSet(false, true)) {
+            if (manual) pendingManualRequest.enqueue();
+            return;
+        }
+        if (manual && !queued) lastAnalyzeTapAt = now;
         currentAnalysisManual = manual;
 
         long remainingMs = rateLimitedUntil - now;
@@ -214,6 +226,7 @@ public class ScreenCaptureService extends Service {
 
         setCoachText("Analysiere …");
         awaitingCleanFrame.set(true);
+        long captureId = captureSequence.incrementAndGet();
         cleanFrameRequestedAt = System.currentTimeMillis();
 
         mainHandler.post(() -> {
@@ -221,10 +234,12 @@ public class ScreenCaptureService extends Service {
         });
 
         mainHandler.postDelayed(() -> {
+            // Ignore the timeout from an earlier, already completed capture.
+            if (captureSequence.get() != captureId) return;
             if (awaitingCleanFrame.compareAndSet(true, false)) {
-                analyzing.set(false);
+                finishAnalysis();
                 restoreOverlay();
-                setCoachText("Kein aktuelles Bild");
+                setCoachText("Kein aktuelles Spielbild verfügbar");
             }
         }, 2200L);
     }
@@ -384,13 +399,25 @@ public class ScreenCaptureService extends Service {
                             rateLimitedUntil,
                             System.currentTimeMillis() + 20_000L
                     );
-                    setCoachText("Gemini ausgelastet – Plan bleibt gespeichert");
+                    setCoachText("KI ausgelastet – letzter Plan nicht aktuell bestätigt");
                 } else {
-                    if (msg.length() > 95) msg = msg.substring(0, 95) + "…";
-                    setCoachText(msg);
+                    // Never display arbitrary HTTP/model error bodies or prompt fragments.
+                    android.util.Log.w("TFTJarvis", "Analyse fehlgeschlagen: "
+                            + e.getClass().getSimpleName());
+                    setCoachText("Analyse fehlgeschlagen – erneut versuchen");
                 }
             } finally {
-                analyzing.set(false);
+                finishAnalysis();
+            }
+        });
+    }
+
+    private void finishAnalysis() {
+        analyzing.set(false);
+        mainHandler.post(() -> {
+            if (instance == this && pendingManualRequest.take()) {
+                // Always request a NEW screen frame; don't replay an old upload.
+                beginAnalysis(true, true);
             }
         });
     }
@@ -592,7 +619,7 @@ public class ScreenCaptureService extends Service {
                 // An interrupted image decode must not become the last analyzed
                 // baseline; allow Smart-Auto to retry on a new clean frame.
                 smartFrameDetector.discardPendingAnalysis();
-                analyzing.set(false);
+                finishAnalysis();
                 restoreOverlay();
                 setCoachText("Bild konnte nicht gelesen werden");
             }
@@ -782,6 +809,7 @@ public class ScreenCaptureService extends Service {
             }
             if ("Gedächtnis zurücksetzen".equals(title)) {
                 stateGeneration.incrementAndGet();
+                pendingManualRequest.clear();
                 matchState.clear();
                 evidenceLedger.clear();
                 lastPhase = "UNKLAR";
@@ -929,6 +957,8 @@ public class ScreenCaptureService extends Service {
     @Override
     public void onDestroy() {
         stateGeneration.incrementAndGet();
+        pendingManualRequest.clear();
+        captureSequence.incrementAndGet();
         awaitingCleanFrame.set(false);
         mainHandler.removeCallbacks(hideTransientCall);
         instance = null;
