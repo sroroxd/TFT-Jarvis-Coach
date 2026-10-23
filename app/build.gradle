@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 23
-        versionName '0.7.5-adaptive-roi'
+        versionCode 24
+        versionName '0.7.6-strategy-memory'
     }
 
     compileOptions {
