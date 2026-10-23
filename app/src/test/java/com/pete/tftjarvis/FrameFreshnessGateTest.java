@@ -18,7 +18,8 @@ public class FrameFreshnessGateTest {
         assertTrue(FrameFreshnessGate.shouldDiscard(101_000L, 100_000L));
     }
 
-    @Test public void unknownTimestampDoesNotCrashThePipeline() {
-        assertFalse(FrameFreshnessGate.shouldDiscard(0L, 100_000L));
+    @Test public void unknownTimestampIsRejectedInsteadOfBeingTreatedAsFresh() {
+        assertTrue(FrameFreshnessGate.shouldDiscard(0L, 100_000L));
+        assertTrue(FrameFreshnessGate.shouldDiscard(-1L, 100_000L));
     }
 }
