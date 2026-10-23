@@ -71,6 +71,17 @@ public final class OpenAIClient {
     private OpenAIClient() {}
 
     public static CoachResult coach(String apiKey, String model, String base64Jpeg, String previousState) throws Exception {
+        return coach(apiKey, model, base64Jpeg, null, null, previousState);
+    }
+
+    public static CoachResult coach(
+            String apiKey,
+            String model,
+            String base64Jpeg,
+            String detailBase64Jpeg,
+            String detailLabel,
+            String previousState
+    ) throws Exception {
         URL url = new URL("https://api.openai.com/v1/responses");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -177,6 +188,20 @@ public final class OpenAIClient {
                 .put("type", "input_image")
                 .put("image_url", "data:image/jpeg;base64," + base64Jpeg)
                 .put("detail", "auto"));
+
+        if (detailBase64Jpeg != null && !detailBase64Jpeg.trim().isEmpty()) {
+            String label = detailLabel == null || detailLabel.trim().isEmpty()
+                    ? "Detailausschnitt"
+                    : detailLabel.trim();
+            content.put(new JSONObject().put("type", "input_text").put("text",
+                    "Zusätzlicher Zoom aus DEMSELBEN aktuellen Screenshot: " + label
+                            + ". Er dient nur zur besseren Lesbarkeit. Das Vollbild bleibt autoritativ; "
+                            + "ignoriere den Zoom, wenn er zur aktuellen Phase nicht passt."));
+            content.put(new JSONObject()
+                    .put("type", "input_image")
+                    .put("image_url", "data:image/jpeg;base64," + detailBase64Jpeg)
+                    .put("detail", "high"));
+        }
 
         JSONArray input = new JSONArray();
         input.put(new JSONObject().put("role", "user").put("content", content));
