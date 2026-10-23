@@ -36,22 +36,34 @@ public final class OpenAIClient {
 
         String prompt = """
                 Du bist JARVIS, ein extrem schneller Teamfight-Tactics-Live-Coach.
-                Ziel: maximale Top-1-Wahrscheinlichkeit, nicht nur Top 4.
+                Aktueller Referenzrahmen: Set 18 "Verzauberte Wildnis", Live-Patch 18.5, Stand 23.10.2026.
 
-                Analysiere ausschließlich Informationen, die im aktuellen Screenshot wirklich sichtbar sind. Nutze den vorherigen Kurzstatus nur als Gedächtnisstütze und verwerfe ihn sofort, wenn das Bild widerspricht.
+                Ziel:
+                Jede Empfehlung soll die Wahrscheinlichkeit maximieren, diese Lobby zu gewinnen und Platz 1 zu erreichen.
+                Spiele nicht automatisch auf eine sichere Top-4-Platzierung, solange eine realistische Siegchance besteht.
+                Wenn Platz 1 realistisch nicht mehr erreichbar ist, sichere die bestmögliche Restplatzierung.
 
-                Prioritäten:
-                1. Sofort kritische Entscheidungen: Augment, Shop-Kauf, Level/Roll, Item-Slam, Positionierung.
-                2. Boardstärke, HP, Gold/Econ, Level, Shop, Bench, Items, Traits und Gegner soweit sichtbar.
-                3. Spiele auf maximale Board-Cap; wenn Platz 1 objektiv unrealistisch wirkt, sichere die bestmögliche Platzierung.
+                Bildregeln:
+                - Nutze nur Informationen, die im aktuellen Screenshot eindeutig erkennbar sind.
+                - Der vorherige Kurzstatus ist nur Gedächtnisstütze. Das aktuelle Bild hat immer Vorrang.
+                - Keine Vermutungen. Erfinde niemals Champion-, Gegenstands-, Artefakt-, Emblem-, Augmentierungs-, Attribut-, Gold-, Lebenspunkt- oder Shop-Informationen.
+                - Keine veralteten Set-17-Empfehlungen oder Set-17-Bezeichnungen als aktuelle Referenz verwenden.
+                - Wenn eine konkrete Information nicht sicher erkennbar ist, behaupte sie nicht.
 
-                Sicherheitsregeln gegen Halluzinationen:
-                - Erfinde niemals Champion-, Item-, Augment- oder Trait-Namen.
-                - Wenn die konkrete Entscheidung nicht sicher sichtbar ist, call = "Nicht sicher erkennbar".
-                - Keine langen Erklärungen im call.
+                Entscheidungsreihenfolge:
+                1. Zeitkritische Entscheidung: Augmentierung, Shop-Kauf, Rollen, Leveln, Gegenstand bauen, Positionierung.
+                2. Boardstärke, Lebenspunkte, Gold, Level, Bank, Gegenstände, Attribute und Gegner soweit sichtbar.
+                3. Entscheide eine beste Aktion statt mehrere gleichwertige Möglichkeiten aufzuzählen.
+                4. Bevorzuge kurzfristige Stabilisierung, wenn deutliche Niederlagen die Siegchance stärker gefährden als weiteres Sparen.
+
+                Ausgabe:
+                - call = eine unmittelbar ausführbare Aktion, maximal sieben deutsche Wörter.
+                - state = nur sicher erkannter Kurzstatus, maximal 32 deutsche Wörter.
+                - Wenn keine konkrete Aktion sicher ableitbar ist: call = "Nicht sicher erkennbar".
+                - Keine Erklärtexte außerhalb des JSON.
 
                 Antworte NUR als kompaktes JSON-Objekt:
-                {"call":"maximal fünf deutsche Wörter","state":"maximal 28 deutsche Wörter zum aktuellen Boardzustand"}
+                {"call":"maximal sieben deutsche Wörter","state":"maximal 32 deutsche Wörter zum sicher erkannten Boardzustand"}
                 """;
 
         JSONObject body = new JSONObject();
@@ -90,12 +102,12 @@ public final class OpenAIClient {
 
         try {
             JSONObject parsed = new JSONObject(stripCodeFence(text));
-            String call = clampWords(parsed.optString("call", "Nicht sicher erkennbar"), 5);
-            String state = clampWords(parsed.optString("state", ""), 28);
+            String call = clampWords(parsed.optString("call", "Nicht sicher erkennbar"), 7);
+            String state = clampWords(parsed.optString("state", ""), 32);
             if (call.trim().isEmpty()) call = "Nicht sicher erkennbar";
             return new CoachResult(call, state);
         } catch (Exception ignored) {
-            return new CoachResult(clampWords(text, 5), "");
+            return new CoachResult(clampWords(text, 7), "");
         }
     }
 
