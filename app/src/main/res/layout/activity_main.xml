@@ -22,7 +22,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:text="Set 18 · Patch 18.5 · Smart-Auto · lokale Ereigniserkennung · Cloud nur bei relevanten Entscheidungen"
+            android:text="Smart-Auto · lokale Bildschirm- und HUD-Erkennung · KI-Auswertung ausgewählter Spielbilder"
             android:textColor="#B9B9B9"
             android:textSize="14sp" />
 
@@ -112,7 +112,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="Smart-Auto beobachtet Bildschirmänderungen lokal und sendet nur bei relevanten, stabilen Zustandswechseln ein Bild an die gewählte KI. ANALYSE bleibt als manueller Override verfügbar. Über ⋮ im Overlay kannst du Smart-Auto abschalten oder das Match-Gedächtnis zurücksetzen."
+            android:text="Smart-Auto beobachtet Bildschirmänderungen lokal und sendet nur bei relevanten, stabilen Zustandswechseln ein Bild an die gewählte KI. ANALYSE bleibt als manueller Override verfügbar. Über ⋮ im Overlay findest du Auto, Stumm, Status und Neue Partie / Gedächtnis zurücksetzen."
             android:textColor="#B0B0B0"
             android:textSize="14sp" />
 

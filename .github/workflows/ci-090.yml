@@ -25,22 +25,22 @@ jobs:
         run: gradle --no-daemon lintDebug --stacktrace
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug --stacktrace
-      - name: Audit the published 0.9.0 APK binary (not just source)
+      - name: Audit the published 0.9.2 APK binary (not just source)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/published-apk"
-          gh release download v0.9.0-beta1 \
+          gh release download v0.9.2-beta3 \
             --repo "$GITHUB_REPOSITORY" \
-            --pattern 'JARVIS-0.9.0-beta1.apk' \
+            --pattern 'JARVIS-0.9.2-beta3.apk' \
             --dir "$RUNNER_TEMP/published-apk"
-          APK="$RUNNER_TEMP/published-apk/JARVIS-0.9.0-beta1.apk"
+          APK="$RUNNER_TEMP/published-apk/JARVIS-0.9.2-beta3.apk"
           test -s "$APK"
           unzip -t "$APK" > /dev/null
           ACTUAL_DIGEST=$(sha256sum "$APK" | cut -d' ' -f1)
-          RELEASE_DIGEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.9.0-beta1" \
-            --jq '.assets[] | select(.name=="JARVIS-0.9.0-beta1.apk") | .digest' | sed 's/^sha256://')
+          RELEASE_DIGEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.9.2-beta3" \
+            --jq '.assets[] | select(.name=="JARVIS-0.9.2-beta3.apk") | .digest' | sed 's/^sha256://')
           test -n "$RELEASE_DIGEST"
           test "$ACTUAL_DIGEST" = "$RELEASE_DIGEST"
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)
@@ -52,13 +52,13 @@ jobs:
           EXPECTED=$(tr -d ':[:space:]' < .github/signing/cert-sha256.txt | tr '[:upper:]' '[:lower:]')
           test -n "$CERT" && test "$CERT" = "$EXPECTED"
           "$AAPT" dump badging "$APK" > "$RUNNER_TEMP/published-badging.txt"
-          grep -q "^package: name='com.pete.tftjarvis' versionCode='30' versionName='0.9.0-beta1'" "$RUNNER_TEMP/published-badging.txt"
+          grep -q "^package: name='com.pete.tftjarvis' versionCode='32' versionName='0.9.2-beta3'" "$RUNNER_TEMP/published-badging.txt"
           grep -q "launchable-activity: name='com.pete.tftjarvis.MainActivity'" "$RUNNER_TEMP/published-badging.txt"
           if grep -q '^application-debuggable' "$RUNNER_TEMP/published-badging.txt"; then
-            echo "::error::Published 0.9.0 APK is unexpectedly debuggable"
+            echo "::error::Published 0.9.2 APK is unexpectedly debuggable"
             exit 1
           fi
-          echo "Published APK verified: $ACTUAL_DIGEST, signer=$CERT, versionCode=30"
+          echo "Published APK verified: $ACTUAL_DIGEST, signer=$CERT, versionCode=32"
       - name: Create throwaway signing identity for CI only
         run: |
           set -euo pipefail

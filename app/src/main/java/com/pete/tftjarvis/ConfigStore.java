@@ -24,6 +24,7 @@ public final class ConfigStore {
     private static final String P_GEMINI_MODEL = "gemini_model";
     private static final String P_PROVIDER = "provider";
     private static final String P_SMART_AUTO = "smart_auto";
+    private static final String P_SPEECH_MUTED = "speech_muted";
 
     public static final String PROVIDER_GEMINI = "GEMINI";
     public static final String PROVIDER_OPENAI = "OPENAI";
@@ -88,6 +89,14 @@ public final class ConfigStore {
         prefs(context).edit()
                 .putBoolean(P_SMART_AUTO, enabled)
                 .apply();
+    }
+
+    public static boolean loadSpeechMuted(Context context) {
+        return prefs(context).getBoolean(P_SPEECH_MUTED, false);
+    }
+
+    public static void saveSpeechMuted(Context context, boolean muted) {
+        prefs(context).edit().putBoolean(P_SPEECH_MUTED, muted).apply();
     }
 
     private static String normalizeProvider(String provider) {

@@ -159,12 +159,14 @@ final class LocalHudPerception implements AutoCloseable {
         }
 
         Field<String> stage = findStage(candidates, width, height);
+        // Own HUD coordinates calibrated on real S24 Ultra landscape captures.
+        // The old broad level region included the adjacent 4-gold XP button,
+        // producing L4(H) for actual level 2. Don't use unanchored timer as HP.
         Field<Integer> level = findNumber(candidates, width, height,
-                1, 10, 0.00f, 0.34f, 0.62f, 1.00f, 0.12f, 0.86f);
+                1, 10, HudRegions.OWN_LEVEL);
         Field<Integer> gold = findNumber(candidates, width, height,
-                0, 999, 0.68f, 1.00f, 0.58f, 1.00f, 0.90f, 0.86f);
-        Field<Integer> health = findNumber(candidates, width, height,
-                0, 100, 0.18f, 0.72f, 0.00f, 0.22f, 0.51f, 0.08f);
+                0, 999, HudRegions.OWN_GOLD);
+        Field<Integer> health = null; // No own-player HP anchor validated yet.
 
         return new Observation(level, gold, health, stage, now);
     }
@@ -204,12 +206,7 @@ final class LocalHudPerception implements AutoCloseable {
             int height,
             int min,
             int max,
-            float left,
-            float right,
-            float top,
-            float bottom,
-            float expectedX,
-            float expectedY
+            HudRegions.Region region
     ) {
         Candidate best = null;
         Integer bestValue = null;
@@ -218,12 +215,12 @@ final class LocalHudPerception implements AutoCloseable {
         for (Candidate c : candidates) {
             float x = c.centerX(width);
             float y = c.centerY(height);
-            if (x < left || x > right || y < top || y > bottom) continue;
+            if (!region.contains(x, y)) continue;
 
             Integer value = parseNumericToken(c.text);
             if (value == null || value < min || value > max) continue;
 
-            float distance = Math.abs(x - expectedX) + Math.abs(y - expectedY);
+            float distance = Math.abs(x - region.expectedX) + Math.abs(y - region.expectedY);
             float score = c.heightNorm(height) * 120f - distance * 18f;
             if (score > bestScore) {
                 best = c;

@@ -57,6 +57,8 @@ public class ScreenCaptureService extends Service {
     private final ExecutorService aiExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean analyzing = new AtomicBoolean(false);
     private final AtomicBoolean awaitingCleanFrame = new AtomicBoolean(false);
+    private final ManualRequestLatch pendingManualRequest = new ManualRequestLatch();
+    private final AtomicLong captureSequence = new AtomicLong(0L);
     private final Handler mainHandler = new Handler();
     private final SmartFrameDetector smartFrameDetector = new SmartFrameDetector();
     private final LocalHudPerception localHudPerception = new LocalHudPerception();
@@ -66,6 +68,15 @@ public class ScreenCaptureService extends Service {
     private volatile long rateLimitedUntil = 0L;
     private volatile long lastAnalyzeTapAt = 0L;
     private volatile boolean smartAutoEnabled = true;
+    private volatile boolean speechMuted = false;
+    // Privacy-safe operational counters: never retain screen pixels, keys or prompts.
+    private final AtomicLong capturedFrameCount = new AtomicLong();
+    private final AtomicLong cloudAttemptCount = new AtomicLong();
+    private final AtomicLong cloudAcceptedCount = new AtomicLong();
+    private final AtomicLong cloudErrorCount = new AtomicLong();
+    private volatile long lastOcrMs;
+    private volatile long lastCloudMs;
+    private volatile String lastErrorType = "-";
     private volatile boolean currentAnalysisManual = false;
     private volatile String lastPhase = "UNKLAR";
     private volatile boolean matchEndedLock = false;
@@ -83,6 +94,8 @@ public class ScreenCaptureService extends Service {
     private HandlerThread captureThread;
     private Handler captureHandler;
     private volatile long cleanFrameRequestedAt;
+    // Tied to the BEGINNING of capture, not the later OCR/network request.
+    private volatile long activeCaptureGeneration;
 
     private WindowManager windowManager;
     private WindowManager.LayoutParams overlayParams;
@@ -151,6 +164,7 @@ public class ScreenCaptureService extends Service {
         }
 
         smartAutoEnabled = ConfigStore.loadSmartAuto(this);
+        speechMuted = ConfigStore.loadSpeechMuted(this);
 
         createOverlayIfAllowed();
 
@@ -183,14 +197,25 @@ public class ScreenCaptureService extends Service {
     }
 
     private void beginAnalysis(boolean manual) {
-        long now = System.currentTimeMillis();
-        if (manual) {
-            if (now - lastAnalyzeTapAt < 1000L) return;
-            lastAnalyzeTapAt = now;
-        }
+        beginAnalysis(manual, false);
+    }
 
-        if (!analyzing.compareAndSet(false, true)) return;
+    private void beginAnalysis(boolean manual, boolean queued) {
+        long now = System.currentTimeMillis();
+        // A manual tap made during another request is never lost to debounce.
+        if (manual && analyzing.get()) {
+            pendingManualRequest.enqueue();
+            setCoachText("Manuelle Analyse vorgemerkt");
+            return;
+        }
+        if (manual && !queued && now - lastAnalyzeTapAt < 1000L) return;
+        if (!analyzing.compareAndSet(false, true)) {
+            if (manual) pendingManualRequest.enqueue();
+            return;
+        }
+        if (manual && !queued) lastAnalyzeTapAt = now;
         currentAnalysisManual = manual;
+        activeCaptureGeneration = stateGeneration.get();
 
         long remainingMs = rateLimitedUntil - now;
         if (remainingMs > 0) {
@@ -214,6 +239,7 @@ public class ScreenCaptureService extends Service {
 
         setCoachText("Analysiere …");
         awaitingCleanFrame.set(true);
+        long captureId = captureSequence.incrementAndGet();
         cleanFrameRequestedAt = System.currentTimeMillis();
 
         mainHandler.post(() -> {
@@ -221,10 +247,12 @@ public class ScreenCaptureService extends Service {
         });
 
         mainHandler.postDelayed(() -> {
+            // Ignore the timeout from an earlier, already completed capture.
+            if (captureSequence.get() != captureId) return;
             if (awaitingCleanFrame.compareAndSet(true, false)) {
-                analyzing.set(false);
+                finishAnalysis();
                 restoreOverlay();
-                setCoachText("Kein aktuelles Bild");
+                setCoachText("Kein aktuelles Spielbild verfügbar");
             }
         }, 2200L);
     }
@@ -232,15 +260,17 @@ public class ScreenCaptureService extends Service {
     private void runAnalysis(String frame, String detailFrame, String detailLabel,
                              LocalHudPerception.Observation localHud) {
         final boolean manualRequest = currentAnalysisManual;
-        final long expectedGeneration = stateGeneration.get();
+        final long expectedGeneration = activeCaptureGeneration;
         final long capturedAt = localHud == null ? 0L : localHud.observedAt;
         aiExecutor.execute(() -> {
+            long cloudStart = System.nanoTime();
             try {
                 if (expectedGeneration != stateGeneration.get()) return;
                 evidenceLedger.recordLocal(localHud);
                 String stateContext = matchState.toPromptContext() + evidenceLedger.toPromptContext();
 
                 OpenAIClient.CoachResult result;
+                cloudAttemptCount.incrementAndGet();
                 if (ConfigStore.PROVIDER_GEMINI.equals(provider)) {
                     result = GeminiClient.coach(
                             apiKey, model, frame, detailFrame, detailLabel, stateContext);
@@ -266,6 +296,7 @@ public class ScreenCaptureService extends Service {
                 DecisionGate.GateResult gated = DecisionGate.validate(result, matchState, evidenceLedger);
                 result = gated.result;
                 if (result == null) throw new Exception("Entscheidung konnte nicht verifiziert werden");
+                cloudAcceptedCount.incrementAndGet();
                 String gateNotice = gated.blocked ? "GATE: " + gated.reason : null;
 
                 String resultPhase = result.phase;
@@ -345,14 +376,20 @@ public class ScreenCaptureService extends Service {
                 publishCall(resultPhase, result.call, result.plan, result.priority, result.confidence,
                         resetNotice, manualRequest);
             } catch (GeminiClient.RateLimitException e) {
+                cloudErrorCount.incrementAndGet();
+                lastErrorType = "GeminiRateLimit";
                 if (expectedGeneration != stateGeneration.get()) return;
                 smartFrameDetector.discardPendingAnalysis();
                 handleRateLimit(e.retryAfterSeconds, "Gemini");
             } catch (OpenAIClient.RateLimitException e) {
+                cloudErrorCount.incrementAndGet();
+                lastErrorType = "OpenAIRateLimit";
                 if (expectedGeneration != stateGeneration.get()) return;
                 smartFrameDetector.discardPendingAnalysis();
                 handleRateLimit(e.retryAfterSeconds, "OpenAI");
             } catch (Exception e) {
+                cloudErrorCount.incrementAndGet();
+                lastErrorType = e.getClass().getSimpleName();
                 // A late cloud error from a reset match must not replace the
                 // visible status or rate limit state of the next match.
                 if (expectedGeneration != stateGeneration.get()) return;
@@ -384,13 +421,26 @@ public class ScreenCaptureService extends Service {
                             rateLimitedUntil,
                             System.currentTimeMillis() + 20_000L
                     );
-                    setCoachText("Gemini ausgelastet – Plan bleibt gespeichert");
+                    setCoachText("KI ausgelastet – letzter Plan nicht aktuell bestätigt");
                 } else {
-                    if (msg.length() > 95) msg = msg.substring(0, 95) + "…";
-                    setCoachText(msg);
+                    // Never display arbitrary HTTP/model error bodies or prompt fragments.
+                    android.util.Log.w("TFTJarvis", "Analyse fehlgeschlagen: "
+                            + e.getClass().getSimpleName());
+                    setCoachText("Analyse fehlgeschlagen – erneut versuchen");
                 }
             } finally {
-                analyzing.set(false);
+                lastCloudMs = Math.max(0L, (System.nanoTime() - cloudStart) / 1_000_000L);
+                finishAnalysis();
+            }
+        });
+    }
+
+    private void finishAnalysis() {
+        analyzing.set(false);
+        mainHandler.post(() -> {
+            if (instance == this && pendingManualRequest.take()) {
+                // Always request a NEW screen frame; don't replay an old upload.
+                beginAnalysis(true, true);
             }
         });
     }
@@ -454,7 +504,7 @@ public class ScreenCaptureService extends Service {
 
     private boolean shouldSpeak(String phase, String call, String priority,
                                 String confidence, boolean manualRequest) {
-        if (call == null || call.trim().isEmpty()) return false;
+        if (speechMuted || call == null || call.trim().isEmpty()) return false;
         String normalizedCall = call.toLowerCase(Locale.GERMAN)
                 .replaceAll("[^a-z0-9äöüß ]", " ")
                 .replaceAll("\\s+", " ")
@@ -534,6 +584,7 @@ public class ScreenCaptureService extends Service {
         try {
             image = reader.acquireLatestImage();
             if (image == null) return;
+            capturedFrameCount.incrementAndGet();
 
             long now = System.currentTimeMillis();
 
@@ -564,7 +615,9 @@ public class ScreenCaptureService extends Service {
             );
             padded.copyPixelsFromBuffer(buffer);
             Bitmap cropped = Bitmap.createBitmap(padded, 0, 0, image.getWidth(), image.getHeight());
+            long ocrStart = System.nanoTime();
             LocalHudPerception.Observation localHud = localHudPerception.observe(cropped, lastPhase);
+            lastOcrMs = Math.max(0L, (System.nanoTime() - ocrStart) / 1_000_000L);
             Bitmap upload = downscale(cropped, 1280);
             String cleanFrame = encodeJpeg(upload, 72);
 
@@ -592,7 +645,7 @@ public class ScreenCaptureService extends Service {
                 // An interrupted image decode must not become the last analyzed
                 // baseline; allow Smart-Auto to retry on a new clean frame.
                 smartFrameDetector.discardPendingAnalysis();
-                analyzing.set(false);
+                finishAnalysis();
                 restoreOverlay();
                 setCoachText("Bild konnte nicht gelesen werden");
             }
@@ -769,7 +822,9 @@ public class ScreenCaptureService extends Service {
         menu.getMenu().add(smartAutoEnabled
                 ? "Intelligente Automatik ausschalten"
                 : "Intelligente Automatik einschalten");
-        menu.getMenu().add("Gedächtnis zurücksetzen");
+        menu.getMenu().add(speechMuted ? "Sprache einschalten" : "Stumm schalten");
+        menu.getMenu().add("Status anzeigen");
+        menu.getMenu().add("Neue Partie / Gedächtnis zurücksetzen");
         menu.setOnMenuItemClickListener(item -> {
             String title = item.getTitle().toString();
             if (title.startsWith("Intelligente Automatik")) {
@@ -780,8 +835,32 @@ public class ScreenCaptureService extends Service {
                 updateHeaderStatus();
                 return true;
             }
-            if ("Gedächtnis zurücksetzen".equals(title)) {
+            if ("Stumm schalten".equals(title) || "Sprache einschalten".equals(title)) {
+                speechMuted = !speechMuted;
+                ConfigStore.saveSpeechMuted(this, speechMuted);
+                if (speechMuted && tts != null) tts.stop();
+                setCoachText(speechMuted ? "Sprachausgabe stumm" : "Sprachausgabe aktiv");
+                updateHeaderStatus();
+                return true;
+            }
+            if ("Status anzeigen".equals(title)) {
+                String source = ConfigStore.PROVIDER_GEMINI.equals(provider) ? "Gemini" : "OpenAI";
+                setCoachText("Status: " + source + " | Auto: "
+                        + (smartAutoEnabled ? "AN" : "AUS")
+                        + " | Sprache: " + (speechMuted ? "STUMM" : "AN")
+                        + " | Phase: " + lastPhase
+                        + " | " + evidenceLedger.debugSummary()
+                        + " | Frames: " + capturedFrameCount.get()
+                        + " | Cloud: " + cloudAcceptedCount.get() + "/"
+                        + cloudAttemptCount.get()
+                        + " | Fehler: " + cloudErrorCount.get() + " (" + lastErrorType + ")"
+                        + " | OCR: " + lastOcrMs + "ms"
+                        + " | KI: " + lastCloudMs + "ms");
+                return true;
+            }
+            if ("Neue Partie / Gedächtnis zurücksetzen".equals(title)) {
                 stateGeneration.incrementAndGet();
+                pendingManualRequest.clear();
                 matchState.clear();
                 evidenceLedger.clear();
                 lastPhase = "UNKLAR";
@@ -791,7 +870,7 @@ public class ScreenCaptureService extends Service {
                 lastSpokenAt = 0L;
                 smartFrameDetector.reset();
                 if (detailText != null) detailText.setVisibility(View.GONE);
-                setCoachText("Gedächtnis zurückgesetzt");
+                setCoachText("Neue Partie – Gedächtnis zurückgesetzt");
                 return true;
             }
             return false;
@@ -810,7 +889,7 @@ public class ScreenCaptureService extends Service {
                         ? "JARVIS " + source + " ◉"
                         : "JARVIS " + source + " ✓";
             }
-            coachText.setText(status);
+            coachText.setText(speechMuted ? status + " | STUMM" : status);
         }
     }
 
@@ -929,6 +1008,8 @@ public class ScreenCaptureService extends Service {
     @Override
     public void onDestroy() {
         stateGeneration.incrementAndGet();
+        pendingManualRequest.clear();
+        captureSequence.incrementAndGet();
         awaitingCleanFrame.set(false);
         mainHandler.removeCallbacks(hideTransientCall);
         instance = null;
