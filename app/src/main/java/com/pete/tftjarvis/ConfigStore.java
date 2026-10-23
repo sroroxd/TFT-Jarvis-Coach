@@ -17,7 +17,7 @@ import javax.crypto.spec.GCMParameterSpec;
 public final class ConfigStore {
     private static final String PREFS = "tft_jarvis_config";
     private static final String KEY_ALIAS = "tft_jarvis_api_key";
-    private static final String P_API = "api";
+    private static final String P_API = "gemini_api";
     private static final String P_MODEL = "model";
     private static final String P_SMART_AUTO = "smart_auto";
 
@@ -25,7 +25,10 @@ public final class ConfigStore {
 
     public static void save(Context context, String apiKey, String model) {
         SharedPreferences.Editor e = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
-        e.putString(P_MODEL, model);
+        String safeModel = model != null && model.trim().startsWith("gemini-")
+                ? model.trim()
+                : GeminiClient.DEFAULT_MODEL;
+        e.putString(P_MODEL, safeModel);
         if (apiKey != null && !apiKey.trim().isEmpty()) {
             try {
                 e.putString(P_API, encrypt(apiKey));
@@ -49,7 +52,12 @@ public final class ConfigStore {
     }
 
     public static String loadModel(Context context) {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(P_MODEL, "gpt-6-luna");
+        String saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(P_MODEL, GeminiClient.DEFAULT_MODEL);
+        if (saved == null || !saved.trim().startsWith("gemini-")) {
+            return GeminiClient.DEFAULT_MODEL;
+        }
+        return saved.trim();
     }
 
     public static boolean loadSmartAuto(Context context) {
