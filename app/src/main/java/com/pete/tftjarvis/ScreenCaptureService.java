@@ -57,6 +57,7 @@ public class ScreenCaptureService extends Service {
     private final AtomicBoolean awaitingCleanFrame = new AtomicBoolean(false);
     private final Handler mainHandler = new Handler();
     private volatile long rateLimitedUntil = 0L;
+    private volatile long lastAnalyzeTapAt = 0L;
 
     private String apiKey = "";
     private String model = "gpt-6-luna";
@@ -143,13 +144,21 @@ public class ScreenCaptureService extends Service {
     }
 
     private void analyzeCurrentFrame() {
+        long now = System.currentTimeMillis();
+        if (now - lastAnalyzeTapAt < 1000L) return;
+        lastAnalyzeTapAt = now;
+
         if (!analyzing.compareAndSet(false, true)) return;
 
-        long remainingMs = rateLimitedUntil - System.currentTimeMillis();
+        long remainingMs = rateLimitedUntil - now;
         if (remainingMs > 0) {
             analyzing.set(false);
             long remainingSeconds = Math.max(1L, (remainingMs + 999L) / 1000L);
-            setCoachText("Rate-Limit – noch " + remainingSeconds + " s");
+            if (remainingSeconds > 30L) {
+                setCoachText("Cloud pausiert – später erneut");
+            } else {
+                setCoachText("Rate-Limit – noch " + remainingSeconds + " s");
+            }
             return;
         }
 
@@ -202,12 +211,12 @@ public class ScreenCaptureService extends Service {
 
                 publishCall(result.phase, result.call, result.plan, showResetNotice);
             } catch (OpenAIClient.RateLimitException e) {
-                if (e.retryAfterSeconds > 300) {
-                    // Do not lock the UI for hours. Keep a short local cooldown and explain the long API window.
-                    rateLimitedUntil = System.currentTimeMillis() + 60_000L;
-                    setCoachText("OpenAI-Limit länger aktiv – später erneut");
+                long serverWaitMs = Math.min(86_400_000L, Math.max(1L, e.retryAfterSeconds) * 1000L);
+                rateLimitedUntil = System.currentTimeMillis() + serverWaitMs;
+                if (e.retryAfterSeconds > 30) {
+                    // Respect the server's retry window; do not turn a long limit into a new request after 60 seconds.
+                    setCoachText("Cloud pausiert – später erneut");
                 } else {
-                    rateLimitedUntil = System.currentTimeMillis() + (e.retryAfterSeconds * 1000L);
                     setCoachText("Rate-Limit – " + e.retryAfterSeconds + " s Pause");
                 }
             } catch (Exception e) {
