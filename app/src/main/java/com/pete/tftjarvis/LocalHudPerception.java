@@ -3,6 +3,7 @@ package com.pete.tftjarvis;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
 
+import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.Tasks;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.Text;
@@ -106,17 +107,28 @@ final class LocalHudPerception implements AutoCloseable {
         // Always inspect the new clean frame; when coming from lobby/result screens,
         // require a visible round-stage anchor before trusting numeric HUD readings.
         Bitmap input = downscale(source, 1280);
+        int width = input.getWidth();
+        int height = input.getHeight();
+        Task<Text> pending = null;
         try {
-            Text text = Tasks.await(
-                    recognizer.process(InputImage.fromBitmap(input, 0)),
-                    900,
-                    TimeUnit.MILLISECONDS
-            );
-            return gateForPhase(parse(text, input.getWidth(), input.getHeight(), now), lastPhase);
+            pending = recognizer.process(InputImage.fromBitmap(input, 0));
+            if (input != source) {
+                // ML Kit runs asynchronously. A 900ms timeout only stops our
+                // wait, not its work; recycling the bitmap early can corrupt it.
+                final Bitmap taskBitmap = input;
+                pending.addOnCompleteListener(done -> {
+                    if (!taskBitmap.isRecycled()) taskBitmap.recycle();
+                });
+            }
+            Text text = Tasks.await(pending, 900, TimeUnit.MILLISECONDS);
+            return gateForPhase(parse(text, width, height, now), lastPhase);
         } catch (Exception ignored) {
             return empty(now);
         } finally {
-            if (input != source && !input.isRecycled()) input.recycle();
+            // If constructing the task failed, no async reader owns the bitmap.
+            if (pending == null && input != source && !input.isRecycled()) {
+                input.recycle();
+            }
         }
     }
 
@@ -246,7 +258,9 @@ final class LocalHudPerception implements AutoCloseable {
         int w = source.getWidth();
         int h = source.getHeight();
         int largest = Math.max(w, h);
-        if (largest <= maxSide) return source;
+        // Always own the OCR input, even on small/portrait screenshots:
+        // callers may recycle their source while ML Kit is still running.
+        if (largest <= maxSide) return source.copy(Bitmap.Config.ARGB_8888, false);
         float scale = (float) maxSide / largest;
         return Bitmap.createScaledBitmap(
                 source,
