@@ -18,7 +18,7 @@ android {
     // its signing certificate, preferences, or API-key configuration.
     buildTypes {
         debug {
-            applicationIdSuffix '.beta'
+            applicationIdSuffix '.beta084'
             versionNameSuffix '-debug'
         }
     }

@@ -2,6 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application
-        android:label="TFT Jarvis Beta"
+        android:label="TFT Jarvis 0.8.4 Beta"
         tools:replace="android:label" />
 </manifest>
