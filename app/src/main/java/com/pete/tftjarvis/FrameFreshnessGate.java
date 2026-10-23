@@ -10,7 +10,10 @@ final class FrameFreshnessGate {
     private FrameFreshnessGate() {}
 
     static boolean shouldDiscard(long frameObservedAt, long now) {
-        return frameObservedAt > 0L
-                && (now < frameObservedAt || now - frameObservedAt > MAX_FRAME_AGE_MS);
+        // An absent timestamp provides no evidence that the image is current.
+        // Fail closed instead of issuing a potentially outdated in-game call.
+        return frameObservedAt <= 0L
+                || now < frameObservedAt
+                || now - frameObservedAt > MAX_FRAME_AGE_MS;
     }
 }
