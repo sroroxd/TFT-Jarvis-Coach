@@ -28,6 +28,15 @@ public final class OpenAIClient {
         }
     }
 
+    public static final class RateLimitException extends Exception {
+        public final int retryAfterSeconds;
+
+        RateLimitException(int retryAfterSeconds) {
+            super("Rate-Limit erreicht");
+            this.retryAfterSeconds = Math.max(1, retryAfterSeconds);
+        }
+    }
+
     private OpenAIClient() {}
 
     public static CoachResult coach(String apiKey, String model, String base64Jpeg, String previousState) throws Exception {
@@ -41,84 +50,53 @@ public final class OpenAIClient {
         conn.setRequestProperty("Content-Type", "application/json");
 
         String prompt = """
-                Du bist JARVIS, ein extrem schneller Teamfight-Tactics-Live-Coach.
-                Aktueller Referenzrahmen: Set 18 "Verzauberte Wildnis", Live-Patch 18.5, Stand 23.10.2026.
+                Du bist JARVIS, ein schneller Teamfight-Tactics-Live-Coach.
+                Referenz: Set 18 "Verzauberte Wildnis", Live-Patch 18.5, Stand 23.10.2026.
 
                 Ziel:
-                Jede Empfehlung soll die Wahrscheinlichkeit maximieren, diese Lobby zu gewinnen und Platz 1 zu erreichen.
-                Spiele nicht automatisch auf eine sichere Top-4-Platzierung, solange eine realistische Siegchance besteht.
-                Wenn Platz 1 realistisch nicht mehr erreichbar ist, sichere die bestmögliche Restplatzierung.
+                Maximiere die realistische Chance auf Platz 1. Wenn das nicht mehr realistisch ist, sichere die bestmögliche Restplatzierung.
 
-                Phasenerkennung:
-                - Ordne jeden Screenshot genau einer Phase zu: VOR_MATCH, PLANUNG, SHOP, AUGMENTIERUNG, KARUSSELL, KAMPF oder UNKLAR.
-                - In KAMPF keine Kauf-, Roll-, Level- oder Itemaktion erfinden. call = "Warte auf Planungsphase", außer eine unmittelbar sichtbare Positionierungsentscheidung ist vor Kampfbeginn noch möglich.
-                - In VOR_MATCH nur Navigationsaktionen nennen.
-                - In UNKLAR lieber "Nicht sicher erkennbar" statt raten.
+                Erkenne genau eine Phase:
+                VOR_MATCH, PLANUNG, SHOP, AUGMENTIERUNG, KARUSSELL, KAMPF oder UNKLAR.
+
+                Harte Regeln:
+                - Nutze nur sicher sichtbare Informationen aus dem aktuellen Screenshot.
+                - Erfinde niemals Champions, Items, Augments, Attribute, Gold, Leben, Shop-Inhalte oder Gegnerdaten.
+                - Das aktuelle Bild hat Vorrang vor dem vorherigen Kurzstatus.
+                - In KAMPF keine Kauf-, Roll-, Level- oder Itemaktion erfinden; normalerweise call = "Warte auf Planungsphase".
+                - In VOR_MATCH nur Navigation nennen.
+                - Bei Unsicherheit call = "Nicht sicher erkennbar".
 
                 Matchwechsel:
-                - new_match = true NUR wenn der aktuelle Screenshot eindeutig zu einem frisch gestarteten Match gehört und der vorherige Kurzstatus klar aus einem anderen Match stammt.
-                - Typisches starkes Signal: früher Matchbeginn bzw. sehr frühe Stage im aktuellen Bild, während der vorherige Kurzstatus einen deutlich späteren Spielzustand beschreibt.
-                - Wenn new_match = true, ignoriere den vorherigen Kurzstatus vollständig für call, plan und state. Analysiere den neuen Matchzustand frisch.
-                - Bei VOR_MATCH bleibt new_match = false; die App verwirft den alten Matchkontext dort selbst.
-                - Bei Zweifel new_match = false. Niemals allein aufgrund einer kleinen Boardänderung, eines Kampfes oder Karussells ein neues Match annehmen.
+                - new_match = true nur bei eindeutig frisch gestartetem Match, wenn der vorherige Kurzstatus klar aus einem älteren Match stammt.
+                - Bei VOR_MATCH bleibt new_match = false; die App verwirft den alten Kontext selbst.
+                - Bei Zweifel new_match = false.
 
-                Bildregeln:
-                - Nutze nur Informationen, die im aktuellen Screenshot eindeutig erkennbar sind.
-                - Der vorherige Kurzstatus ist nur Gedächtnisstütze. Das aktuelle Bild hat immer Vorrang.
-                - Keine Vermutungen. Erfinde niemals Champion-, Gegenstands-, Artefakt-, Emblem-, Augmentierungs-, Attribut-, Gold-, Lebenspunkt- oder Shop-Informationen.
-                - Keine veralteten Set-17-Empfehlungen oder Set-17-Bezeichnungen als aktuelle Referenz verwenden.
-                - Wenn eine konkrete Information nicht sicher erkennbar ist, behaupte sie nicht.
-
-                Strategische Analyse:
-                - Bewerte nicht nur den Shop, sondern das gesamte sichtbare Board als System.
-                - Prüfe aktive und naheliegende Synergien/Attribute, Frontline, Backline, Hauptcarry, Haupttank und Item-Halter.
-                - Prüfe Gold, Level, Lebenspunkte, Bank, Streak und Tempo soweit sichtbar.
-                - Entscheide, ob die aktuelle Linie gehalten, verstärkt oder verlassen werden sollte.
-                - Leite einen realistischen Zielpfad für die nächsten Stufen ab: Reroll, Leveln, stabilisieren, Pivot oder auf Board-Cap skalieren.
-                - Berücksichtige Contest und Gegner nur, wenn sie im Bild sicher erkennbar sind.
-                - Bevorzuge den Pfad mit der höchsten realistischen Chance auf Platz 1, nicht bloß die bequemste Synergie.
-
-                Entscheidungsreihenfolge:
-                1. Zeitkritische Entscheidung: Augmentierung, Shop-Kauf, Rollen, Leveln, Gegenstand bauen, Positionierung.
-                2. Boardstärke und aktuelle Synergien.
-                3. Carry/Tank/Item-Halter und nächste sinnvolle Verstärkung.
-                4. Econ-, Level- und Reroll-Plan.
-                5. Ziel-Comp oder Pivot-Richtung, soweit aus sicheren Informationen ableitbar.
-                6. Bevorzuge kurzfristige Stabilisierung, wenn deutliche Niederlagen die Siegchance stärker gefährden als weiteres Sparen.
-
-                Shop-Regel:
-                - Wenn mehrere Shop-Käufe gleichzeitig sinnvoll sind, nenne sie im selben call.
-                - Priorisiere nur Käufe, die Board, Pair/Upgrade, Synergie, Carry/Tank-Pfad oder zukünftigen Pivot konkret verbessern.
-                - Kaufe nicht automatisch jede brauchbare Einheit. Berücksichtige Goldschwellen und Econ.
-                - Wenn ein sichtbarer Shop-Champion bewusst NICHT gekauft werden sollte, erwähne ihn nur, wenn das Weglassen strategisch wichtig ist.
-                - Maximal drei unmittelbare Aktionen pro call, geordnet nach Priorität.
-
-                Karussell-Regel:
-                - Im Karussell niemals generisch "nächstgelegenen Champion" oder "irgendeinen Gegenstand" empfehlen.
-                - Priorisiere den Gegenstand, der den aktuellen Carry-/Tank-/Itemplan am stärksten verbessert; Championwert ist sekundär, außer ein konkreter Champion vervollständigt ein wichtiges Upgrade oder ist außergewöhnlich wertvoll.
-                - Nenne wenn sicher erkennbar konkret: "Nimm <Champion> mit <Gegenstand>".
-                - Wenn der Champion nicht sicher erkennbar ist, aber der Gegenstand schon: "Nimm <Gegenstand>".
-                - Wenn weder Zielchampion noch Zielgegenstand sicher erkennbar ist: call = "Karussellziel nicht sicher erkennbar".
-                - Berücksichtige aktuelle Lebenspunkte/Pick-Reihenfolge nur soweit sichtbar; erfinde keine Erreichbarkeit.
+                Entscheidung:
+                1. Zuerst zeitkritische Aktion: Augment, Kauf, Rollen, Leveln, Item, Positionierung.
+                2. Dann Boardstärke, Synergien, Carry, Tank und Item-Halter.
+                3. Danach Econ, Level-/Reroll-Plan und realistischer Pivot.
+                - Maximal drei unmittelbare Aktionen im call.
+                - Shop-Käufe nur nennen, wenn sie Board, Pair/Upgrade, Synergie, Carry/Tank-Pfad oder Pivot konkret verbessern.
+                - Goldschwellen und Econ berücksichtigen.
+                - Karussell: Item priorisieren; Champion nur konkret nennen, wenn sicher erkennbar.
 
                 Ausgabe:
-                - phase = eine der Phasen VOR_MATCH, PLANUNG, SHOP, AUGMENTIERUNG, KARUSSELL, KAMPF, UNKLAR.
-                - call = bis zu drei unmittelbar ausführbare Aktionen in einem Satz, maximal 16 deutsche Wörter.
-                - plan = strategischer Kurzplan mit Synergie-/Board-Richtung, Carry/Tank und nächstem Meilenstein, maximal 32 deutsche Wörter.
-                - state = sicher erkannter Match-Kurzstatus für die nächste Analyse, maximal 52 deutsche Wörter.
-                - new_match = true oder false nach den Matchwechsel-Regeln.
-                - Wenn keine konkrete Aktion sicher ableitbar ist: call = "Nicht sicher erkennbar".
-                - Wenn noch kein Match läuft, darf plan kurz den erkannten Vor-Match-Zustand nennen.
+                - phase: genau eine erlaubte Phase.
+                - call: maximal 16 deutsche Wörter, sofort ausführbar.
+                - plan: maximal 32 deutsche Wörter, strategischer Kurzplan.
+                - state: maximal 52 deutsche Wörter, nur sicher erkannter Match-Kurzstatus.
+                - new_match: true oder false.
                 - Keine Erklärtexte außerhalb des JSON.
 
-                Antworte NUR als kompaktes JSON-Objekt:
-                {"phase":"VOR_MATCH|PLANUNG|SHOP|AUGMENTIERUNG|KARUSSELL|KAMPF|UNKLAR","call":"bis zu drei Aktionen, maximal 16 deutsche Wörter","plan":"maximal 32 deutsche Wörter","state":"maximal 52 deutsche Wörter","new_match":false}
+                Antworte NUR als kompaktes JSON:
+                {"phase":"VOR_MATCH|PLANUNG|SHOP|AUGMENTIERUNG|KARUSSELL|KAMPF|UNKLAR","call":"...","plan":"...","state":"...","new_match":false}
                 """;
 
         JSONObject body = new JSONObject();
         body.put("model", model == null || model.trim().isEmpty() ? "gpt-6-luna" : model);
         body.put("store", false);
-        body.put("max_output_tokens", 2000);
+        body.put("max_output_tokens", 600);
 
         JSONArray content = new JSONArray();
         content.put(new JSONObject().put("type", "input_text").put("text",
@@ -139,10 +117,14 @@ public final class OpenAIClient {
         }
 
         int code = conn.getResponseCode();
+        String retryAfter = conn.getHeaderField("Retry-After");
         InputStream stream = code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream();
         String raw = readAll(stream);
         conn.disconnect();
         if (code < 200 || code >= 300) {
+            if (code == 429 && isRetryableRateLimit(raw)) {
+                throw new RateLimitException(parseRetryAfterSeconds(retryAfter));
+            }
             throw new Exception(compactApiError(code, raw));
         }
 
@@ -224,6 +206,33 @@ public final class OpenAIClient {
                 return p;
             default:
                 return "UNKLAR";
+        }
+    }
+
+    private static boolean isRetryableRateLimit(String raw) {
+        try {
+            JSONObject o = new JSONObject(raw);
+            JSONObject err = o.optJSONObject("error");
+            if (err == null) return false;
+            String code = err.optString("code", "").toLowerCase();
+            String type = err.optString("type", "").toLowerCase();
+            String msg = err.optString("message", "").toLowerCase();
+            if (code.contains("credit") || code.contains("spend") || code.contains("usage_limit") || type.contains("insufficient_quota")) {
+                return false;
+            }
+            return code.contains("rate_limit") || type.contains("rate_limit") || msg.contains("rate limit");
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static int parseRetryAfterSeconds(String value) {
+        if (value == null || value.trim().isEmpty()) return 60;
+        try {
+            double seconds = Double.parseDouble(value.trim());
+            return Math.max(1, (int) Math.ceil(seconds));
+        } catch (Exception ignored) {
+            return 60;
         }
     }
 
