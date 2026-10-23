@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   bootstrap:
@@ -55,3 +56,7 @@ jobs:
           git add .github/signing/jarvis-release.p12.asc .github/signing/cert-sha256.txt
           git commit -m "Initialize permanent encrypted JARVIS APK signing identity"
           git push origin HEAD:main
+      - name: Trigger signed APK publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release-090.yml --ref main
