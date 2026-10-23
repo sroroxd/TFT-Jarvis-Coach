@@ -60,7 +60,10 @@ public class ScreenCaptureService extends Service {
     private volatile long rateLimitedUntil = 0L;
     private volatile long lastAnalyzeTapAt = 0L;
     private volatile boolean smartAutoEnabled = true;
+    private volatile boolean currentAnalysisManual = false;
     private volatile String lastPhase = "UNKLAR";
+    private String lastSpokenKey = "";
+    private long lastSpokenAt = 0L;
 
     private String apiKey = "";
     private String model = "gpt-6-luna";
@@ -155,6 +158,7 @@ public class ScreenCaptureService extends Service {
         }
 
         if (!analyzing.compareAndSet(false, true)) return;
+        currentAnalysisManual = manual;
 
         long remainingMs = rateLimitedUntil - now;
         if (remainingMs > 0) {
@@ -192,6 +196,7 @@ public class ScreenCaptureService extends Service {
     }
 
     private void runAnalysis(String frame) {
+        final boolean manualRequest = currentAnalysisManual;
         aiExecutor.execute(() -> {
             try {
                 OpenAIClient.CoachResult result = OpenAIClient.coach(apiKey, model, frame, previousState);
@@ -216,7 +221,8 @@ public class ScreenCaptureService extends Service {
                     if (memory.length() > 0) previousState = memory.toString();
                 }
 
-                publishCall(result.phase, result.call, result.plan, showResetNotice);
+                publishCall(result.phase, result.call, result.plan, result.priority, result.confidence,
+                        showResetNotice, manualRequest);
             } catch (OpenAIClient.RateLimitException e) {
                 long serverWaitMs = Math.min(86_400_000L, Math.max(1L, e.retryAfterSeconds) * 1000L);
                 rateLimitedUntil = System.currentTimeMillis() + serverWaitMs;
@@ -236,10 +242,13 @@ public class ScreenCaptureService extends Service {
         });
     }
 
-    private void publishCall(String phase, String call, String plan, boolean showResetNotice) {
+    private void publishCall(String phase, String call, String plan, String priority,
+                             String confidence, boolean showResetNotice, boolean manualRequest) {
         mainHandler.post(() -> {
-            String shortCall = "[" + phase + "] " + call;
+            String badge = "KRITISCH".equals(priority) ? "!" : ("WICHTIG".equals(priority) ? "•" : "i");
+            String shortCall = "[" + badge + "][" + phase + "] " + call;
             StringBuilder detail = new StringBuilder(shortCall);
+            detail.append("\nSICHERHEIT: ").append(confidence);
             if (plan != null && !plan.trim().isEmpty()) {
                 detail.append("\nPLAN: ").append(plan.trim());
             }
@@ -256,10 +265,47 @@ public class ScreenCaptureService extends Service {
                 if (overlayExpanded) detailText.setVisibility(View.VISIBLE);
             }
 
-            if (tts != null) tts.speak(call, TextToSpeech.QUEUE_FLUSH, null, "tft-call");
+            if (tts != null && shouldSpeak(phase, call, priority, confidence, manualRequest)) {
+                tts.speak(call, TextToSpeech.QUEUE_FLUSH, null, "tft-call");
+            }
             NotificationManager nm = getSystemService(NotificationManager.class);
             nm.notify(NOTIFICATION_ID, buildNotification(call));
         });
+    }
+
+    private boolean shouldSpeak(String phase, String call, String priority,
+                                String confidence, boolean manualRequest) {
+        if (call == null || call.trim().isEmpty()) return false;
+        String normalizedCall = call.toLowerCase(Locale.GERMAN)
+                .replaceAll("[^a-z0-9äöüß ]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        if (normalizedCall.isEmpty()
+                || normalizedCall.contains("nicht sicher erkennbar")
+                || normalizedCall.contains("warte auf planungsphase")
+                || "VOR_MATCH".equals(phase)
+                || "INFO".equals(priority)
+                || "NIEDRIG".equals(confidence)) {
+            return false;
+        }
+
+        boolean eligible;
+        if (manualRequest) {
+            eligible = ("KRITISCH".equals(priority) || "WICHTIG".equals(priority))
+                    && ("HOCH".equals(confidence) || "MITTEL".equals(confidence));
+        } else {
+            eligible = "KRITISCH".equals(priority) && "HOCH".equals(confidence);
+        }
+        if (!eligible) return false;
+
+        long now = System.currentTimeMillis();
+        String key = phase + "|" + normalizedCall;
+        if (key.equals(lastSpokenKey) && now - lastSpokenAt < 30_000L) return false;
+
+        lastSpokenKey = key;
+        lastSpokenAt = now;
+        return true;
     }
 
     private void startProjection(int resultCode, Intent data) {
@@ -539,6 +585,8 @@ public class ScreenCaptureService extends Service {
                 previousState = "";
                 lastPhase = "UNKLAR";
                 lastDetailText = "";
+                lastSpokenKey = "";
+                lastSpokenAt = 0L;
                 smartFrameDetector.reset();
                 if (detailText != null) detailText.setVisibility(View.GONE);
                 setCoachText("Gedächtnis zurückgesetzt");
