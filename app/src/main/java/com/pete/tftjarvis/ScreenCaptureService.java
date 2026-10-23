@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.graphics.drawable.GradientDrawable;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.media.Image;
@@ -23,11 +24,13 @@ import android.os.HandlerThread;
 import android.os.IBinder;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
+import android.text.TextUtils;
 import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
 import android.view.WindowManager;
-import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -51,9 +54,9 @@ public class ScreenCaptureService extends Service {
 
     private final ExecutorService aiExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean analyzing = new AtomicBoolean(false);
+    private final AtomicBoolean awaitingCleanFrame = new AtomicBoolean(false);
     private final Handler mainHandler = new Handler();
 
-    private volatile String latestFrameBase64;
     private String apiKey = "";
     private String model = "gpt-6-luna";
     private String previousState = "";
@@ -65,12 +68,17 @@ public class ScreenCaptureService extends Service {
     private ImageReader imageReader;
     private HandlerThread captureThread;
     private Handler captureHandler;
-    private long lastEncodedAt;
+    private volatile long cleanFrameRequestedAt;
 
     private WindowManager windowManager;
+    private WindowManager.LayoutParams overlayParams;
     private LinearLayout overlay;
+    private LinearLayout controlsRow;
     private TextView coachText;
-    private Button autoButton;
+    private TextView expandButton;
+    private TextView autoButton;
+    private boolean overlayExpanded;
+    private String lastCoachText = "JARVIS bereit";
     private TextToSpeech tts;
 
     private final Runnable autoTick = new Runnable() {
@@ -135,12 +143,6 @@ public class ScreenCaptureService extends Service {
 
     private void analyzeCurrentFrame() {
         if (!analyzing.compareAndSet(false, true)) return;
-        final String frame = latestFrameBase64;
-        if (frame == null || frame.trim().isEmpty()) {
-            analyzing.set(false);
-            setCoachText("Noch kein Bild");
-            return;
-        }
         if (apiKey == null || apiKey.trim().isEmpty()) {
             analyzing.set(false);
             setCoachText("API-Key fehlt");
@@ -148,6 +150,23 @@ public class ScreenCaptureService extends Service {
         }
 
         setCoachText("Analysiere …");
+        awaitingCleanFrame.set(true);
+        cleanFrameRequestedAt = System.currentTimeMillis();
+
+        mainHandler.post(() -> {
+            if (overlay != null) overlay.setVisibility(View.INVISIBLE);
+        });
+
+        mainHandler.postDelayed(() -> {
+            if (awaitingCleanFrame.compareAndSet(true, false)) {
+                analyzing.set(false);
+                restoreOverlay();
+                setCoachText("Kein aktuelles Bild");
+            }
+        }, 2200L);
+    }
+
+    private void runAnalysis(String frame) {
         aiExecutor.execute(() -> {
             try {
                 OpenAIClient.CoachResult result = OpenAIClient.coach(apiKey, model, frame, previousState);
@@ -243,10 +262,10 @@ public class ScreenCaptureService extends Service {
         Image image = null;
         try {
             image = reader.acquireLatestImage();
-            if (image == null) return;
+            if (image == null || !awaitingCleanFrame.get()) return;
+
             long now = System.currentTimeMillis();
-            if (now - lastEncodedAt < 1000L) return;
-            lastEncodedAt = now;
+            if (now - cleanFrameRequestedAt < 180L) return;
 
             Image.Plane plane = image.getPlanes()[0];
             ByteBuffer buffer = plane.getBuffer();
@@ -263,12 +282,22 @@ public class ScreenCaptureService extends Service {
             Bitmap upload = downscale(cropped, 1920);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             upload.compress(Bitmap.CompressFormat.JPEG, 78, out);
-            latestFrameBase64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+            String cleanFrame = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
 
             if (upload != cropped) upload.recycle();
             if (cropped != padded) cropped.recycle();
             padded.recycle();
-        } catch (Throwable ignored) {
+
+            if (awaitingCleanFrame.compareAndSet(true, false)) {
+                restoreOverlay();
+                runAnalysis(cleanFrame);
+            }
+        } catch (Throwable e) {
+            if (awaitingCleanFrame.compareAndSet(true, false)) {
+                analyzing.set(false);
+                restoreOverlay();
+                setCoachText("Bild konnte nicht gelesen werden");
+            }
         } finally {
             if (image != null) image.close();
         }
@@ -288,40 +317,56 @@ public class ScreenCaptureService extends Service {
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
 
         overlay = new LinearLayout(this);
-        overlay.setOrientation(LinearLayout.HORIZONTAL);
-        overlay.setGravity(Gravity.CENTER_VERTICAL);
-        overlay.setPadding(12, 8, 12, 8);
-        overlay.setBackgroundColor(0xE6000000);
+        overlay.setOrientation(LinearLayout.VERTICAL);
+        overlay.setPadding(dp(8), dp(4), dp(8), dp(4));
+        overlay.setBackground(makeRoundedBackground(0xDC111318, 14));
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
 
         coachText = new TextView(this);
-        coachText.setText("JARVIS bereit");
-        coachText.setTextColor(0xFFFFFFFF);
-        coachText.setTextSize(16f);
-        coachText.setPadding(8, 0, 14, 0);
-        overlay.addView(coachText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        coachText.setText(lastCoachText);
+        coachText.setTextColor(0xFFF4F4F4);
+        coachText.setTextSize(13f);
+        coachText.setSingleLine(true);
+        coachText.setEllipsize(TextUtils.TruncateAt.END);
+        coachText.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.58f));
+        coachText.setPadding(dp(4), dp(2), dp(8), dp(2));
+        attachDragBehavior(coachText);
+        header.addView(coachText);
 
-        Button rememberButton = new Button(this);
-        rememberButton.setText("ANALYSE");
-        rememberButton.setAllCaps(false);
-        rememberButton.setOnClickListener(v -> analyzeCurrentFrame());
-        overlay.addView(rememberButton);
+        expandButton = makeChip("▾");
+        expandButton.setContentDescription("JARVIS aufklappen");
+        expandButton.setOnClickListener(v -> toggleOverlayExpanded());
+        header.addView(expandButton);
 
-        autoButton = new Button(this);
-        autoButton.setText("AUTO AUS");
-        autoButton.setAllCaps(false);
+        overlay.addView(header);
+
+        controlsRow = new LinearLayout(this);
+        controlsRow.setOrientation(LinearLayout.HORIZONTAL);
+        controlsRow.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        controlsRow.setPadding(0, dp(4), 0, 0);
+        controlsRow.setVisibility(View.GONE);
+
+        TextView analyzeButton = makeChip("ANALYSE");
+        analyzeButton.setOnClickListener(v -> analyzeCurrentFrame());
+        controlsRow.addView(analyzeButton);
+
+        autoButton = makeChip("AUTO AUS");
         autoButton.setOnClickListener(v -> toggleAuto());
-        overlay.addView(autoButton);
+        controlsRow.addView(autoButton);
 
-        Button resetButton = new Button(this);
-        resetButton.setText("RESET");
-        resetButton.setAllCaps(false);
+        TextView resetButton = makeChip("RESET");
         resetButton.setOnClickListener(v -> {
             previousState = "";
             setCoachText("Gedächtnis zurückgesetzt");
         });
-        overlay.addView(resetButton);
+        controlsRow.addView(resetButton);
 
-        WindowManager.LayoutParams p = new WindowManager.LayoutParams(
+        overlay.addView(controlsRow);
+
+        overlayParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 Build.VERSION.SDK_INT >= 26
@@ -330,9 +375,101 @@ public class ScreenCaptureService extends Service {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT
         );
-        p.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        p.y = 28;
-        windowManager.addView(overlay, p);
+        overlayParams.gravity = Gravity.TOP | Gravity.START;
+        overlayParams.x = dp(10);
+        overlayParams.y = dp(10);
+        windowManager.addView(overlay, overlayParams);
+    }
+
+    private TextView makeChip(String label) {
+        TextView chip = new TextView(this);
+        chip.setText(label);
+        chip.setTextColor(0xFFF1F1F1);
+        chip.setTextSize(11f);
+        chip.setGravity(Gravity.CENTER);
+        chip.setPadding(dp(10), dp(5), dp(10), dp(5));
+        chip.setBackground(makeRoundedBackground(0xB82A2D33, 11));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        lp.setMargins(dp(4), 0, 0, 0);
+        chip.setLayoutParams(lp);
+        return chip;
+    }
+
+    private GradientDrawable makeRoundedBackground(int color, int radiusDp) {
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(color);
+        bg.setCornerRadius(dp(radiusDp));
+        return bg;
+    }
+
+    private void toggleOverlayExpanded() {
+        overlayExpanded = !overlayExpanded;
+        if (controlsRow != null) controlsRow.setVisibility(overlayExpanded ? View.VISIBLE : View.GONE);
+        if (coachText != null) {
+            coachText.setSingleLine(!overlayExpanded);
+            coachText.setMaxLines(overlayExpanded ? 4 : 1);
+            coachText.setEllipsize(overlayExpanded ? null : TextUtils.TruncateAt.END);
+            coachText.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * (overlayExpanded ? 0.72f : 0.58f)));
+        }
+        if (expandButton != null) {
+            expandButton.setText(overlayExpanded ? "▴" : "▾");
+            expandButton.setContentDescription(overlayExpanded ? "JARVIS einklappen" : "JARVIS aufklappen");
+        }
+        if (overlay != null && windowManager != null && overlayParams != null) {
+            windowManager.updateViewLayout(overlay, overlayParams);
+        }
+    }
+
+    private void attachDragBehavior(View dragHandle) {
+        dragHandle.setOnTouchListener(new View.OnTouchListener() {
+            private float downRawX;
+            private float downRawY;
+            private int startX;
+            private int startY;
+            private boolean moved;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (overlayParams == null || windowManager == null || overlay == null) return false;
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        downRawX = event.getRawX();
+                        downRawY = event.getRawY();
+                        startX = overlayParams.x;
+                        startY = overlayParams.y;
+                        moved = false;
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        int dx = Math.round(event.getRawX() - downRawX);
+                        int dy = Math.round(event.getRawY() - downRawY);
+                        if (Math.abs(dx) > dp(4) || Math.abs(dy) > dp(4)) moved = true;
+                        int maxX = Math.max(0, getResources().getDisplayMetrics().widthPixels - overlay.getWidth());
+                        int maxY = Math.max(0, getResources().getDisplayMetrics().heightPixels - overlay.getHeight());
+                        overlayParams.x = Math.max(0, Math.min(startX + dx, maxX));
+                        overlayParams.y = Math.max(0, Math.min(startY + dy, maxY));
+                        windowManager.updateViewLayout(overlay, overlayParams);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                        if (!moved) toggleOverlayExpanded();
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+        });
+    }
+
+    private void restoreOverlay() {
+        mainHandler.post(() -> {
+            if (overlay != null) overlay.setVisibility(View.VISIBLE);
+        });
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void toggleAuto() {
@@ -347,6 +484,7 @@ public class ScreenCaptureService extends Service {
 
     private void setCoachText(String text) {
         mainHandler.post(() -> {
+            lastCoachText = text;
             if (overlay == null) createOverlayIfAllowed();
             if (coachText != null) coachText.setText(text);
         });
@@ -393,9 +531,9 @@ public class ScreenCaptureService extends Service {
     @Override
     public void onDestroy() {
         autoEnabled = false;
+        awaitingCleanFrame.set(false);
         mainHandler.removeCallbacks(autoTick);
         instance = null;
-        latestFrameBase64 = null;
         if (overlay != null && windowManager != null) {
             try { windowManager.removeView(overlay); } catch (Throwable ignored) {}
         }
