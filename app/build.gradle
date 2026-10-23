@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 27
-        versionName '0.8.0-perception-alpha'
+        versionCode 28
+        versionName '0.8.1-evidence-alpha'
     }
 
     compileOptions {

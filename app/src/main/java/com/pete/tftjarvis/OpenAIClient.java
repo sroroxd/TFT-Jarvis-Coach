@@ -30,6 +30,8 @@ public final class OpenAIClient {
         public final List<String> items;
         public final List<String> augments;
         public final List<String> traits;
+        public final List<String> shop;
+        public final List<String> options;
         public final String carry;
         public final String tank;
         public final String stage;
@@ -44,6 +46,7 @@ public final class OpenAIClient {
                     int level, int gold, int health,
                     List<String> board, List<String> bench, List<String> items,
                     List<String> augments, List<String> traits,
+                    List<String> shop, List<String> options,
                     String carry, String tank,
                     String stage, String primaryTrait, String compPlan,
                     String strategyConfidence, boolean pivotRecommended, String pivotReason) {
@@ -62,6 +65,8 @@ public final class OpenAIClient {
             this.items = items;
             this.augments = augments;
             this.traits = traits;
+            this.shop = shop;
+            this.options = options;
             this.carry = carry;
             this.tank = tank;
             this.stage = stage;
@@ -145,6 +150,10 @@ public final class OpenAIClient {
                 - Strukturierte Beobachtungen:
                   level, gold, health: nur wenn sicher sichtbar, sonst -1.
                   board, bench, items, augments, traits: nur sicher erkannte Namen; unbekannt = [].
+                  shop: nur die AKTUELL sichtbaren Shop-Champions; sonst [].
+                  options: nur die AKTUELL sichtbaren auswählbaren Optionen eines Auswahlfensters
+                  (Augments/Items/Artefakte/Amboss); außerhalb eines Auswahlfensters [].
+                  augments enthält nur bereits bestätigte eigene Augments, NICHT die gerade angebotenen Optionen.
                   carry und tank: nur wenn sicher ableitbar, sonst leerer String.
                   stage: sichtbare Runde wie "2-5", sonst leerer String.
                   primary_trait: der aktuell stärkste erkennbare strategische Kern-Trait, z. B. "Ahnenholz"; sonst leer.
@@ -198,6 +207,8 @@ public final class OpenAIClient {
         properties.put("items", new JSONObject(stringArray.toString()));
         properties.put("augments", new JSONObject(stringArray.toString()));
         properties.put("traits", new JSONObject(stringArray.toString()));
+        properties.put("shop", new JSONObject(stringArray.toString()));
+        properties.put("options", new JSONObject(stringArray.toString()));
         properties.put("carry", new JSONObject().put("type", "string"));
         properties.put("tank", new JSONObject().put("type", "string"));
         properties.put("stage", new JSONObject().put("type", "string"));
@@ -217,6 +228,7 @@ public final class OpenAIClient {
                         .put("priority").put("confidence")
                         .put("level").put("gold").put("health")
                         .put("board").put("bench").put("items").put("augments").put("traits")
+                        .put("shop").put("options")
                         .put("carry").put("tank")
                         .put("stage").put("primary_trait").put("comp_plan")
                         .put("strategy_confidence").put("pivot_recommended").put("pivot_reason"))
@@ -292,6 +304,8 @@ public final class OpenAIClient {
             List<String> items = jsonStringList(parsed.optJSONArray("items"));
             List<String> augments = jsonStringList(parsed.optJSONArray("augments"));
             List<String> traits = jsonStringList(parsed.optJSONArray("traits"));
+            List<String> shop = jsonStringList(parsed.optJSONArray("shop"));
+            List<String> options = jsonStringList(parsed.optJSONArray("options"));
             String carry = parsed.optString("carry", "").trim();
             String tank = parsed.optString("tank", "").trim();
             String stage = parsed.optString("stage", "").trim();
@@ -310,13 +324,13 @@ public final class OpenAIClient {
                 priority = "INFO";
             }
             return new CoachResult(phase, call, plan, state, newMatch, priority, confidence,
-                    level, gold, health, board, bench, items, augments, traits, carry, tank,
+                    level, gold, health, board, bench, items, augments, traits, shop, options, carry, tank,
                     stage, primaryTrait, compPlan, strategyConfidence, pivotRecommended, pivotReason);
         } catch (Exception ignored) {
             return new CoachResult("UNKLAR", "KI-Antwort unvollständig – erneut analysieren", "", "", false, "INFO", "NIEDRIG",
                     -1, -1, -1,
                     new ArrayList<>(), new ArrayList<>(), new ArrayList<>(),
-                    new ArrayList<>(), new ArrayList<>(), "", "",
+                    new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), "", "",
                     "", "", "", "NIEDRIG", false, "");
         }
     }

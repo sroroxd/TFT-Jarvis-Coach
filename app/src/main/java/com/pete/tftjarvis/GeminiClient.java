@@ -274,6 +274,10 @@ public final class GeminiClient {
                 - Strukturierte Beobachtungen:
                   level, gold, health: nur wenn sicher sichtbar, sonst -1.
                   board, bench, items, augments, traits: nur sicher erkannte Namen; unbekannt = [].
+                  shop: nur die AKTUELL sichtbaren Shop-Champions; sonst [].
+                  options: nur die AKTUELL sichtbaren auswählbaren Optionen eines Auswahlfensters
+                  (Augments/Items/Artefakte/Amboss); außerhalb eines Auswahlfensters [].
+                  augments enthält nur bereits bestätigte eigene Augments, NICHT die gerade angebotenen Optionen.
                   carry und tank: nur wenn sicher ableitbar, sonst leerer String.
                   stage: sichtbare Runde wie "2-5", sonst leerer String.
                   primary_trait: der aktuell stärkste erkennbare strategische Kern-Trait, z. B. "Ahnenholz"; sonst leer.
@@ -324,6 +328,8 @@ public final class GeminiClient {
         properties.put("items", new JSONObject(stringArray.toString()));
         properties.put("augments", new JSONObject(stringArray.toString()));
         properties.put("traits", new JSONObject(stringArray.toString()));
+        properties.put("shop", new JSONObject(stringArray.toString()));
+        properties.put("options", new JSONObject(stringArray.toString()));
         properties.put("carry", new JSONObject().put("type", "string"));
         properties.put("tank", new JSONObject().put("type", "string"));
         properties.put("stage", new JSONObject().put("type", "string"));
@@ -343,6 +349,7 @@ public final class GeminiClient {
                         .put("new_match").put("priority").put("confidence")
                         .put("level").put("gold").put("health")
                         .put("board").put("bench").put("items").put("augments").put("traits")
+                        .put("shop").put("options")
                         .put("carry").put("tank")
                         .put("stage").put("primary_trait").put("comp_plan")
                         .put("strategy_confidence").put("pivot_recommended").put("pivot_reason"))
@@ -366,6 +373,8 @@ public final class GeminiClient {
         List<String> items = jsonStringList(parsed.optJSONArray("items"));
         List<String> augments = jsonStringList(parsed.optJSONArray("augments"));
         List<String> traits = jsonStringList(parsed.optJSONArray("traits"));
+        List<String> shop = jsonStringList(parsed.optJSONArray("shop"));
+        List<String> options = jsonStringList(parsed.optJSONArray("options"));
         String carry = parsed.optString("carry", "").trim();
         String tank = parsed.optString("tank", "").trim();
         String stage = parsed.optString("stage", "").trim();
@@ -388,7 +397,7 @@ public final class GeminiClient {
 
         return new OpenAIClient.CoachResult(
                 phase, call, plan, state, newMatch, priority, confidence,
-                level, gold, health, board, bench, items, augments, traits, carry, tank,
+                level, gold, health, board, bench, items, augments, traits, shop, options, carry, tank,
                 stage, primaryTrait, compPlan, strategyConfidence, pivotRecommended, pivotReason);
     }
 
