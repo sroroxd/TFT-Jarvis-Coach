@@ -49,7 +49,7 @@ public class MainActivity extends Activity {
                 status("Coaching zuerst starten");
             } else {
                 ScreenCaptureService.requestAnalysis();
-                status("Merken ausgelöst");
+                status("Analyse ausgelöst");
             }
         });
         stopButton.setOnClickListener(v -> {
@@ -111,7 +111,7 @@ public class MainActivity extends Activity {
             service.putExtra(ScreenCaptureService.EXTRA_API_KEY, apiKeyInput.getText().toString().trim());
             service.putExtra(ScreenCaptureService.EXTRA_MODEL, modelInput.getText().toString().trim());
             startForegroundService(service);
-            status("Aktiv – TFT öffnen, MERKEN drücken");
+            status("Aktiv – Smart-Auto läuft; ANALYSE bleibt verfügbar");
         } else {
             status("Bildschirmfreigabe nicht erteilt");
         }
