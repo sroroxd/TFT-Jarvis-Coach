@@ -10,12 +10,18 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 26
-        versionName '0.7.8-stability'
+        versionCode 27
+        versionName '0.8.0-perception-alpha'
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+
+dependencies {
+    // Bundled on-device OCR: no network/model download required at runtime.
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
 }

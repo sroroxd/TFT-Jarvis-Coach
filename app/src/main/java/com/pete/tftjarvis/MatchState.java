@@ -31,6 +31,8 @@ public final class MatchState {
     public String summary;
     public String confidence = "NIEDRIG";
     public String stage;
+    public String stageConfidence = "NIEDRIG";
+    public long stageObservedAt;
 
     public String primaryTrait;
     public String compPlan;
@@ -51,11 +53,17 @@ public final class MatchState {
     private int pendingGoldCount;
     private Integer pendingHealth;
     private int pendingHealthCount;
+    private String pendingStage;
+    private int pendingStageCount;
 
     private final List<String> recentHistory = new ArrayList<>();
     public long observedAt;
 
     public synchronized void apply(OpenAIClient.CoachResult result) {
+        apply(result, null);
+    }
+
+    public synchronized void apply(OpenAIClient.CoachResult result, LocalHudPerception.Observation localHud) {
         if (result == null) return;
         final long now = System.currentTimeMillis();
         final String observationConfidence = normalizeConfidence(result.confidence);
@@ -63,13 +71,33 @@ public final class MatchState {
         String seenPhase = safePhase(result.phase);
         if (!"UNKLAR".equals(seenPhase)) phase = seenPhase;
 
-        updateLevel(result.level, observationConfidence, now);
-        updateGold(result.gold, observationConfidence, now);
-        updateHealth(result.health, observationConfidence, now);
+        if (localHud != null && localHud.level != null) {
+            updateLevel(localHud.level.value,
+                    localConfidence(localHud.level, result.level == localHud.level.value), now);
+        } else {
+            updateLevel(result.level, observationConfidence, now);
+        }
+
+        if (localHud != null && localHud.gold != null) {
+            updateGold(localHud.gold.value,
+                    localConfidence(localHud.gold, result.gold == localHud.gold.value), now);
+        } else {
+            updateGold(result.gold, observationConfidence, now);
+        }
+
+        if (localHud != null && localHud.health != null) {
+            updateHealth(localHud.health.value,
+                    localConfidence(localHud.health, result.health == localHud.health.value), now);
+        } else {
+            updateHealth(result.health, observationConfidence, now);
+        }
 
         String seenStage = cleanOrNull(result.stage);
-        if (seenStage != null && seenStage.matches("\\d+-\\d+")) {
-            if (stage == null || compareStage(seenStage, stage) >= 0) stage = seenStage;
+        if (localHud != null && localHud.stage != null) {
+            boolean agrees = seenStage != null && seenStage.equals(localHud.stage.value);
+            updateStage(localHud.stage.value, localConfidence(localHud.stage, agrees), now);
+        } else {
+            updateStage(seenStage, observationConfidence, now);
         }
 
         updateList(result.board, board, observationConfidence);
@@ -105,7 +133,11 @@ public final class MatchState {
         sb.append("Nie aus alten Werten neue Fakten erfinden; bei Widerspruch aktuellen Screenshot vorsichtig prüfen.\n");
 
         if (phase != null && !"UNKLAR".equals(phase)) sb.append("Letzte Phase: ").append(phase).append('\n');
-        if (stage != null) sb.append("Letzte Stage: ").append(stage).append('\n');
+        if (stage != null) {
+            sb.append("Letzte Stage: ").append(stage)
+                    .append(" [").append(stageConfidence).append(", ")
+                    .append(ageLabel(stageObservedAt)).append("]\n");
+        }
         appendVerifiedInt(sb, "Level", level, levelConfidence, levelObservedAt);
         appendVerifiedInt(sb, "Gold", gold, goldConfidence, goldObservedAt);
         appendVerifiedInt(sb, "HP", health, healthConfidence, healthObservedAt);
@@ -149,7 +181,8 @@ public final class MatchState {
         if (level != null) sb.append(" L").append(level).append("(").append(shortConfidence(levelConfidence, levelObservedAt)).append(")");
         if (gold != null) sb.append(" G").append(gold).append("(").append(shortConfidence(goldConfidence, goldObservedAt)).append(")");
         if (health != null) sb.append(" HP").append(health).append("(").append(shortConfidence(healthConfidence, healthObservedAt)).append(")");
-        if (stage != null) sb.append(" ").append(stage);
+        if (stage != null) sb.append(" ").append(stage).append("(")
+                .append(shortConfidence(stageConfidence, stageObservedAt)).append(")");
         if (!traits.isEmpty()) sb.append("\nTRAITS: ").append(joinLimited(traits, 4));
         if (!augments.isEmpty()) sb.append("\nAUGMENTS: ").append(joinLimited(augments, 3));
         if (sb.length() == 6) sb.append(" noch keine bestätigten HUD-Werte");
@@ -180,6 +213,8 @@ public final class MatchState {
         summary = null;
         confidence = "NIEDRIG";
         stage = null;
+        stageConfidence = "NIEDRIG";
+        stageObservedAt = 0L;
 
         primaryTrait = null;
         compPlan = null;
@@ -200,6 +235,8 @@ public final class MatchState {
         pendingGoldCount = 0;
         pendingHealth = null;
         pendingHealthCount = 0;
+        pendingStage = null;
+        pendingStageCount = 0;
 
         recentHistory.clear();
         observedAt = 0L;
@@ -285,6 +322,47 @@ public final class MatchState {
             pendingHealth = null;
             pendingHealthCount = 0;
         }
+    }
+
+    private void updateStage(String raw, String conf, long now) {
+        String value = cleanOrNull(raw);
+        if (value == null || !value.matches("\\d+-\\d+") || "NIEDRIG".equals(conf)) return;
+        if (stage != null && compareStage(value, stage) < 0) return;
+
+        boolean hugeJump = stage != null && stageMajor(value) > stageMajor(stage) + 1;
+        if (stage != null && stage.equals(value)) {
+            stageConfidence = strongerConfidence(stageConfidence, conf);
+            stageObservedAt = now;
+            pendingStage = null;
+            pendingStageCount = 0;
+            return;
+        }
+
+        if ("HOCH".equals(conf) && !hugeJump) {
+            stage = value;
+            stageConfidence = conf;
+            stageObservedAt = now;
+            pendingStage = null;
+            pendingStageCount = 0;
+            return;
+        }
+
+        if (value.equals(pendingStage)) pendingStageCount++; else {
+            pendingStage = value;
+            pendingStageCount = 1;
+        }
+        if (pendingStageCount >= 2) {
+            stage = value;
+            stageConfidence = conf;
+            stageObservedAt = now;
+            pendingStage = null;
+            pendingStageCount = 0;
+        }
+    }
+
+    private static String localConfidence(LocalHudPerception.Field<?> field, boolean cloudAgrees) {
+        if (field == null) return "NIEDRIG";
+        return cloudAgrees ? "HOCH" : normalizeConfidence(field.confidence);
     }
 
     private static void updateList(List<String> source, List<String> target, String conf) {
