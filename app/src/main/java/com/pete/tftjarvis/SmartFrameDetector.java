@@ -80,9 +80,12 @@ final class SmartFrameDetector {
         double center = diff(lastAnalyzed, current, (int) (GRID_Y * 0.18), (int) (GRID_Y * 0.82));
 
         boolean meaningful;
-        if ("ERGEBNIS".equals(lastPhase) || "VOR_MATCH".equals(lastPhase)) {
-            // Ignore small result-screen animations, queue timers and rotating home banners.
-            meaningful = full >= 0.140 || center >= 0.160;
+        if ("VOR_MATCH".equals(lastPhase)) {
+            // A loading screen or first planning round can differ less than animated
+            // home-screen banners. Use the central playfield and require a stable frame.
+            meaningful = full >= 0.085 || center >= 0.095;
+        } else if ("ERGEBNIS".equals(lastPhase)) {
+            meaningful = full >= 0.110 || center >= 0.120;
         } else if ("KAMPF".equals(lastPhase)) {
             meaningful = full >= AFTER_COMBAT_CHANGE_MIN;
         } else if ("AUGMENTIERUNG".equals(lastPhase) || "KARUSSELL".equals(lastPhase)) {
