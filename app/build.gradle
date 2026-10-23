@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 14
-        versionName '0.6.4-rate-limit-fix'
+        versionCode 15
+        versionName '0.6.5-research-hotfix'
     }
 
     compileOptions {
