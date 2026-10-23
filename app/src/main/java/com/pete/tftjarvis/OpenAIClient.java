@@ -101,13 +101,18 @@ public final class OpenAIClient {
             String detailLabel,
             String previousState
     ) throws Exception {
+        String safeApiKey = CredentialValidator.normalizeApiKey(apiKey);
+        if (safeApiKey.isEmpty()) {
+            throw new Exception(CredentialValidator.invalidKeyMessage(ConfigStore.PROVIDER_OPENAI));
+        }
+
         URL url = new URL("https://api.openai.com/v1/responses");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(15000);
         conn.setReadTimeout(45000);
         conn.setDoOutput(true);
-        conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+        conn.setRequestProperty("Authorization", "Bearer " + safeApiKey);
         conn.setRequestProperty("Content-Type", "application/json");
 
         String prompt = """
@@ -175,7 +180,7 @@ public final class OpenAIClient {
                 """;
 
         JSONObject body = new JSONObject();
-        body.put("model", model == null || model.trim().isEmpty() ? "gpt-6-luna" : model);
+        body.put("model", CredentialValidator.normalizeModel(model, "gpt-6-luna"));
         body.put("store", false);
         body.put("max_output_tokens", 640);
         body.put("reasoning", new JSONObject().put("effort", "none"));
