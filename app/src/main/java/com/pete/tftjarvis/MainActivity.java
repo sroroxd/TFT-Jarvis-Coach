@@ -38,6 +38,8 @@ public class MainActivity extends Activity {
         String savedKey = ConfigStore.loadApiKey(this);
         if (!savedKey.trim().isEmpty()) apiKeyInput.setText(savedKey);
         modelInput.setText(ConfigStore.loadModel(this));
+        modelInput.setEnabled(false);
+        modelInput.setFocusable(false);
 
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
@@ -66,11 +68,11 @@ public class MainActivity extends Activity {
     private void startCoachingFlow() {
         String apiKey = apiKeyInput.getText().toString().trim();
         if (apiKey.isEmpty()) {
-            status("OpenAI API-Key fehlt");
+            status("Gemini API-Key fehlt");
             return;
         }
         String model = modelInput.getText().toString().trim();
-        if (model.isEmpty()) model = "gpt-6-luna";
+        if (model.isEmpty()) model = GeminiClient.DEFAULT_MODEL;
         ConfigStore.save(this, apiKey, model);
 
         if (!Settings.canDrawOverlays(this)) {
@@ -111,7 +113,7 @@ public class MainActivity extends Activity {
             service.putExtra(ScreenCaptureService.EXTRA_API_KEY, apiKeyInput.getText().toString().trim());
             service.putExtra(ScreenCaptureService.EXTRA_MODEL, modelInput.getText().toString().trim());
             startForegroundService(service);
-            status("Aktiv – Smart-Auto läuft; ANALYSE bleibt verfügbar");
+            status("Aktiv – Gemini Free + Smart-Auto; ANALYSE bleibt verfügbar");
         } else {
             status("Bildschirmfreigabe nicht erteilt");
         }
