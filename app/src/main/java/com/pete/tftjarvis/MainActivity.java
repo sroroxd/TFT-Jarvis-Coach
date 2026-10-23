@@ -95,7 +95,7 @@ public class MainActivity extends Activity {
                 status("Coaching zuerst starten");
             } else {
                 ScreenCaptureService.requestAnalysis();
-                status("Analyse ausgelöst");
+                status("Analyse angefordert (ggf. vorgemerkt)");
             }
         });
 

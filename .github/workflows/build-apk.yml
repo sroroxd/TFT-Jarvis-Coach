@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 permissions:
   contents: read
@@ -27,8 +29,8 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
-        run: gradle --no-daemon assembleDebug --stacktrace
+      - name: Test and build debug APK
+        run: gradle --no-daemon testDebugUnitTest assembleDebug --stacktrace
 
       - name: Upload installable APK
         uses: actions/upload-artifact@v4

@@ -213,8 +213,7 @@ public final class GeminiClient {
             throw new ApiException(code, retryAfter, retryable, message);
         }
 
-        String text = extractOutputText(raw);
-        if (text.trim().isEmpty()) throw new Exception("Gemini: keine Textantwort");
+        String text = readValidatedOutputText(raw);
 
         try {
             return parseCoachJson(text);
@@ -360,7 +359,7 @@ public final class GeminiClient {
                 .put("additionalProperties", false);
     }
 
-    private static OpenAIClient.CoachResult parseCoachJson(String text) throws Exception {
+    static OpenAIClient.CoachResult parseCoachJson(String text) throws Exception {
         JSONObject parsed = new JSONObject(stripCodeFence(text));
         String phase = normalizePhase(parsed.optString("phase", "UNKLAR"));
         String call = clampWords(parsed.optString("call", "Nicht sicher erkennbar"), 16);
@@ -413,6 +412,18 @@ public final class GeminiClient {
             if (!value.isEmpty()) out.add(value);
         }
         return out;
+    }
+
+    // Parse the *outer* API envelope defensively; corrupt/truncated transport output
+    // must not leak a raw JSONException into the in-game overlay.
+    static String readValidatedOutputText(String raw) throws Exception {
+        try {
+            String text = extractOutputText(raw);
+            if (text == null || text.trim().isEmpty()) throw new MalformedResponseException();
+            return text;
+        } catch (Exception malformed) {
+            throw new MalformedResponseException();
+        }
     }
 
     private static String extractOutputText(String raw) throws Exception {

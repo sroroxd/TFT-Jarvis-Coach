@@ -56,6 +56,8 @@ public class ScreenCaptureService extends Service {
     private final ExecutorService aiExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean analyzing = new AtomicBoolean(false);
     private final AtomicBoolean awaitingCleanFrame = new AtomicBoolean(false);
+    // At most one pending manual request; never queue stale screenshots.
+    private final ManualRequestLatch pendingManualRequest = new ManualRequestLatch();
     private final Handler mainHandler = new Handler();
     private final SmartFrameDetector smartFrameDetector = new SmartFrameDetector();
     private final LocalHudPerception localHudPerception = new LocalHudPerception();
@@ -180,13 +182,23 @@ public class ScreenCaptureService extends Service {
     }
 
     private void beginAnalysis(boolean manual) {
-        long now = System.currentTimeMillis();
-        if (manual) {
-            if (now - lastAnalyzeTapAt < 1000L) return;
-            lastAnalyzeTapAt = now;
-        }
+        beginAnalysis(manual, false);
+    }
 
-        if (!analyzing.compareAndSet(false, true)) return;
+    private void beginAnalysis(boolean manual, boolean fromQueue) {
+        long now = System.currentTimeMillis();
+        // A manual request made during an in-flight analysis is never dropped by debounce.
+        if (manual && !fromQueue && !analyzing.get()
+                && now - lastAnalyzeTapAt < 1000L) return;
+        if (manual && !fromQueue) lastAnalyzeTapAt = now;
+
+        if (!analyzing.compareAndSet(false, true)) {
+            if (manual) {
+                pendingManualRequest.enqueue();
+                setCoachText("Manuelle Analyse vorgemerkt");
+            }
+            return;
+        }
         currentAnalysisManual = manual;
 
         long remainingMs = rateLimitedUntil - now;
@@ -219,9 +231,9 @@ public class ScreenCaptureService extends Service {
 
         mainHandler.postDelayed(() -> {
             if (awaitingCleanFrame.compareAndSet(true, false)) {
-                analyzing.set(false);
+                finishAnalysis();
                 restoreOverlay();
-                setCoachText("Kein aktuelles Bild");
+                setCoachText("Kein aktuelles Spielbild verfügbar.");
             }
         }, 2200L);
     }
@@ -361,11 +373,24 @@ public class ScreenCaptureService extends Service {
                     );
                     setCoachText("Gemini ausgelastet – Plan bleibt gespeichert");
                 } else {
-                    if (msg.length() > 95) msg = msg.substring(0, 95) + "…";
-                    setCoachText(msg);
+                    // Do not expose untrusted model JSON, HTTP bodies, or stack messages.
+                    android.util.Log.w("TFTJarvis", "Analyse fehlgeschlagen: "
+                            + e.getClass().getSimpleName());
+                    setCoachText("Analyse fehlgeschlagen – erneut versuchen");
                 }
             } finally {
-                analyzing.set(false);
+                finishAnalysis();
+            }
+        });
+    }
+
+    private void finishAnalysis() {
+        analyzing.set(false);
+        // Manual requests are re-captured only AFTER the running analysis finishes.
+        // No old bitmap, cloud response, or unbounded AI backlog is carried over.
+        mainHandler.post(() -> {
+            if (instance == this && pendingManualRequest.take()) {
+                beginAnalysis(true, true);
             }
         });
     }
@@ -564,9 +589,9 @@ public class ScreenCaptureService extends Service {
             }
         } catch (Throwable e) {
             if (awaitingCleanFrame.compareAndSet(true, false)) {
-                analyzing.set(false);
+                finishAnalysis();
                 restoreOverlay();
-                setCoachText("Bild konnte nicht gelesen werden");
+                setCoachText("Nicht sicher erkennbar");
             }
         } finally {
             if (image != null) image.close();
@@ -899,6 +924,7 @@ public class ScreenCaptureService extends Service {
 
     @Override
     public void onDestroy() {
+        pendingManualRequest.clear();
         awaitingCleanFrame.set(false);
         mainHandler.removeCallbacks(hideTransientCall);
         instance = null;
