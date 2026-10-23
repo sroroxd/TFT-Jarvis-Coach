@@ -48,7 +48,7 @@ jobs:
           test -n "$APKSIGNER" && test -n "$AAPT"
           "$APKSIGNER" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/published-cert.txt"
           # apksigner reports the signing scheme (V2) in modern SDKs.
-          CERT=$(sed -nE 's/^[[:space:]]*V[0-9]+ Signer: certificate SHA-256 digest:[[:space:]]*([0-9a-fA-F:]+)[[:space:]]*$/\\1/p' "$RUNNER_TEMP/published-cert.txt" | head -n 1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+          CERT=$(sed -nE 's/^[[:space:]]*V[0-9]+ Signer: certificate SHA-256 digest:[[:space:]]*([0-9a-fA-F:]+)[[:space:]]*$/\1/p' "$RUNNER_TEMP/published-cert.txt" | head -n 1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           EXPECTED=$(tr -d ':[:space:]' < .github/signing/cert-sha256.txt | tr '[:upper:]' '[:lower:]')
           test -n "$CERT" && test "$CERT" = "$EXPECTED"
           "$AAPT" dump badging "$APK" > "$RUNNER_TEMP/published-badging.txt"
@@ -98,11 +98,11 @@ jobs:
           AAPT=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name aapt | sort -V | tail -n 1)
           test -n "$AAPT"
           "$AAPT" dump badging "$APK" > "$RUNNER_TEMP/jarvis-badging.txt"
-          PKG=$(sed -nE "s/^package: name='([^']+)'.*/\\1/p" "$RUNNER_TEMP/jarvis-badging.txt" | head -n 1)
-          APK_CODE=$(sed -nE "s/^package: .*versionCode='([0-9]+)'.*/\\1/p" "$RUNNER_TEMP/jarvis-badging.txt" | head -n 1)
-          APK_NAME=$(sed -nE "s/^package: .*versionName='([^']+)'.*/\\1/p" "$RUNNER_TEMP/jarvis-badging.txt" | head -n 1)
-          SOURCE_CODE=$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\\1/p' app/build.gradle | head -n 1)
-          SOURCE_NAME=$(sed -nE "s/^[[:space:]]*versionName[[:space:]]+'([^']+)'.*/\\1/p" app/build.gradle | head -n 1)
+          PKG=$(sed -nE "s/^package: name='([^']+)'.*/\1/p" "$RUNNER_TEMP/jarvis-badging.txt" | head -n 1)
+          APK_CODE=$(sed -nE "s/^package: .*versionCode='([0-9]+)'.*/\1/p" "$RUNNER_TEMP/jarvis-badging.txt" | head -n 1)
+          APK_NAME=$(sed -nE "s/^package: .*versionName='([^']+)'.*/\1/p" "$RUNNER_TEMP/jarvis-badging.txt" | head -n 1)
+          SOURCE_CODE=$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\1/p' app/build.gradle | head -n 1)
+          SOURCE_NAME=$(sed -nE "s/^[[:space:]]*versionName[[:space:]]+'([^']+)'.*/\1/p" app/build.gradle | head -n 1)
           test "$PKG" = "com.pete.tftjarvis"
           test "$APK_CODE" = "$SOURCE_CODE"
           test "$APK_NAME" = "$SOURCE_NAME"
