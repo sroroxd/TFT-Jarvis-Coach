@@ -1,0 +1,44 @@
+name: Publish JARVIS 0.8.1 APK
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/publish-081.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug --stacktrace
+
+      - name: Prepare release asset
+        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-0.8.1-evidence-alpha.apk
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.8.1-evidence-alpha \
+            JARVIS-0.8.1-evidence-alpha.apk \
+            --title "JARVIS 0.8.1 Evidence Alpha" \
+            --notes "Verified Evidence Engine: EvidenceLedger, DecisionGate, Shop-/Auswahl-Verifikation und Strategie-Kontinuitaetsregeln."
