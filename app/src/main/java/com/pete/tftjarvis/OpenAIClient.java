@@ -53,50 +53,53 @@ public final class OpenAIClient {
                 Du bist JARVIS, ein schneller Teamfight-Tactics-Live-Coach.
                 Referenz: Set 18 "Verzauberte Wildnis", Live-Patch 18.5, Stand 23.10.2026.
 
-                Ziel:
-                Maximiere die realistische Chance auf Platz 1. Wenn das nicht mehr realistisch ist, sichere die bestmögliche Restplatzierung.
+                Ziel: Maximiere in der aktuellen Lobby die realistische Chance auf Platz 1.
+                Falls Platz 1 objektiv nicht mehr realistisch ist, sichere die bestmögliche Restplatzierung.
 
-                Erkenne genau eine Phase:
-                VOR_MATCH, PLANUNG, SHOP, AUGMENTIERUNG, KARUSSELL, KAMPF oder UNKLAR.
+                Erkenne eine Phase: VOR_MATCH, PLANUNG, SHOP, AUGMENTIERUNG, KARUSSELL, KAMPF oder UNKLAR.
 
-                Harte Regeln:
-                - Nutze nur sicher sichtbare Informationen aus dem aktuellen Screenshot.
-                - Erfinde niemals Champions, Items, Augments, Attribute, Gold, Leben, Shop-Inhalte oder Gegnerdaten.
-                - Das aktuelle Bild hat Vorrang vor dem vorherigen Kurzstatus.
-                - In KAMPF keine Kauf-, Roll-, Level- oder Itemaktion erfinden; normalerweise call = "Warte auf Planungsphase".
-                - In VOR_MATCH nur Navigation nennen.
-                - Bei Unsicherheit call = "Nicht sicher erkennbar".
-
-                Matchwechsel:
-                - new_match = true nur bei eindeutig frisch gestartetem Match, wenn der vorherige Kurzstatus klar aus einem älteren Match stammt.
-                - Bei VOR_MATCH bleibt new_match = false; die App verwirft den alten Kontext selbst.
-                - Bei Zweifel new_match = false.
-
-                Entscheidung:
-                1. Zuerst zeitkritische Aktion: Augment, Kauf, Rollen, Leveln, Item, Positionierung.
-                2. Dann Boardstärke, Synergien, Carry, Tank und Item-Halter.
-                3. Danach Econ, Level-/Reroll-Plan und realistischer Pivot.
-                - Maximal drei unmittelbare Aktionen im call.
-                - Shop-Käufe nur nennen, wenn sie Board, Pair/Upgrade, Synergie, Carry/Tank-Pfad oder Pivot konkret verbessern.
-                - Goldschwellen und Econ berücksichtigen.
-                - Karussell: Item priorisieren; Champion nur konkret nennen, wenn sicher erkennbar.
-
-                Ausgabe:
-                - phase: genau eine erlaubte Phase.
-                - call: maximal 16 deutsche Wörter, sofort ausführbar.
-                - plan: maximal 32 deutsche Wörter, strategischer Kurzplan.
-                - state: maximal 52 deutsche Wörter, nur sicher erkannter Match-Kurzstatus.
-                - new_match: true oder false.
-                - Keine Erklärtexte außerhalb des JSON.
-
-                Antworte NUR als kompaktes JSON:
-                {"phase":"VOR_MATCH|PLANUNG|SHOP|AUGMENTIERUNG|KARUSSELL|KAMPF|UNKLAR","call":"...","plan":"...","state":"...","new_match":false}
+                Regeln:
+                - Nutze nur sicher sichtbare Informationen aus dem aktuellen Screenshot plus den kurzen vorherigen Match-Status.
+                - Das aktuelle Bild hat immer Vorrang. Erfinde niemals Champions, Items, Augments, Attribute, Gold, Leben, Shop oder Gegnerdaten.
+                - Bei entscheidender Unsicherheit: call = "Nicht sicher erkennbar".
+                - VOR_MATCH: nur Navigation. KAMPF: keine erfundenen Kauf-, Roll-, Level- oder Itemaktionen.
+                - Priorität: zeitkritische Aktion > Boardstärke/Synergien/Carry/Tank/Items > Econ/Level/Reroll/Pivot.
+                - Nenne im call höchstens drei unmittelbar sinnvolle Aktionen. Kaufe nur für Board, Pair/Upgrade, Synergie, Carry/Tank-Pfad oder klaren Pivot.
+                - Karussell: Item priorisieren; Champion nur nennen, wenn sicher erkennbar.
+                - new_match nur true, wenn ein frisch gestartetes Match gegenüber dem vorherigen Kurzstatus eindeutig erkennbar ist; bei Zweifel false.
+                - state enthält nur sicher erkannte, für die nächste Entscheidung relevante Match-Fakten.
+                - Antworte knapp auf Deutsch und fülle ausschließlich das vorgegebene JSON-Schema.
                 """;
 
         JSONObject body = new JSONObject();
         body.put("model", model == null || model.trim().isEmpty() ? "gpt-6-luna" : model);
         body.put("store", false);
-        body.put("max_output_tokens", 320);
+        body.put("max_output_tokens", 128);
+        body.put("reasoning", new JSONObject().put("effort", "none"));
+
+        JSONObject properties = new JSONObject();
+        properties.put("phase", new JSONObject()
+                .put("type", "string")
+                .put("enum", new JSONArray()
+                        .put("VOR_MATCH").put("PLANUNG").put("SHOP")
+                        .put("AUGMENTIERUNG").put("KARUSSELL").put("KAMPF").put("UNKLAR")));
+        properties.put("call", new JSONObject().put("type", "string"));
+        properties.put("plan", new JSONObject().put("type", "string"));
+        properties.put("state", new JSONObject().put("type", "string"));
+        properties.put("new_match", new JSONObject().put("type", "boolean"));
+
+        JSONObject schema = new JSONObject()
+                .put("type", "object")
+                .put("properties", properties)
+                .put("required", new JSONArray()
+                        .put("phase").put("call").put("plan").put("state").put("new_match"))
+                .put("additionalProperties", false);
+
+        body.put("text", new JSONObject().put("format", new JSONObject()
+                .put("type", "json_schema")
+                .put("name", "jarvis_coach")
+                .put("strict", true)
+                .put("schema", schema)));
 
         JSONArray content = new JSONArray();
         content.put(new JSONObject().put("type", "input_text").put("text",
@@ -217,10 +220,13 @@ public final class OpenAIClient {
             String code = err.optString("code", "").toLowerCase();
             String type = err.optString("type", "").toLowerCase();
             String msg = err.optString("message", "").toLowerCase();
-            if (code.contains("credit") || code.contains("spend") || code.contains("usage_limit") || type.contains("insufficient_quota")) {
+            String joined = code + " " + type + " " + msg;
+            if (joined.contains("credit") || joined.contains("billing") || joined.contains("quota")
+                    || joined.contains("spend") || joined.contains("usage_limit")
+                    || joined.contains("insufficient_quota")) {
                 return false;
             }
-            return code.contains("rate_limit") || type.contains("rate_limit") || msg.contains("rate limit");
+            return joined.contains("rate_limit") || joined.contains("rate limit") || joined.contains("slow_down");
         } catch (Exception ignored) {
             return false;
         }
