@@ -102,11 +102,9 @@ final class LocalHudPerception implements AutoCloseable {
             return empty(now);
         }
 
-        String phase = lastPhase == null ? "UNKLAR" : lastPhase.trim().toUpperCase(Locale.ROOT);
-        if ("VOR_MATCH".equals(phase) || "ERGEBNIS".equals(phase)) {
-            return empty(now);
-        }
-
+        // The last cloud phase describes an earlier frame and can become stale.
+        // Always inspect the new clean frame; when coming from lobby/result screens,
+        // require a visible round-stage anchor before trusting numeric HUD readings.
         Bitmap input = downscale(source, 1280);
         try {
             Text text = Tasks.await(
@@ -114,12 +112,24 @@ final class LocalHudPerception implements AutoCloseable {
                     900,
                     TimeUnit.MILLISECONDS
             );
-            return parse(text, input.getWidth(), input.getHeight(), now);
+            return gateForPhase(parse(text, input.getWidth(), input.getHeight(), now), lastPhase);
         } catch (Exception ignored) {
             return empty(now);
         } finally {
             if (input != source && !input.isRecycled()) input.recycle();
         }
+    }
+
+    static Observation gateForPhase(Observation observation, String lastPhase) {
+        if (observation == null) return empty(System.currentTimeMillis());
+        String phase = lastPhase == null ? "UNKLAR"
+                : lastPhase.trim().toUpperCase(Locale.ROOT);
+        if (("VOR_MATCH".equals(phase) || "ERGEBNIS".equals(phase))
+                && observation.stage == null) {
+            // Avoid treating lobby menu numbers or result placement as health/gold.
+            return empty(observation.observedAt);
+        }
+        return observation;
     }
 
     private Observation parse(Text text, int width, int height, long now) {
