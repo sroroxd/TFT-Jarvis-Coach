@@ -18,6 +18,8 @@ final class SmartFrameDetector {
     private static final long SAMPLE_INTERVAL_MS = 550L;
     private static final long STABLE_FOR_MS = 800L;
     private static final long MIN_CLOUD_INTERVAL_MS = 7000L;
+    private static final int MAX_AUTO_RETRIES = 2;
+    private static final double FAILED_FRAME_CHANGE_MIN = 0.035;
 
     private static final double STABLE_MOTION_MAX = 0.035;
     private static final double FULL_CHANGE_MIN = 0.095;
@@ -35,17 +37,29 @@ final class SmartFrameDetector {
     private long stableSince;
     private long lastCloudAt;
     private boolean pendingChange;
+    private boolean retryAfterFailure;
+    private int consecutiveFailures;
+    private byte[] lastFailedFingerprint;
+    private long retryNotBefore;
 
     synchronized boolean shouldSample(long now) {
         return now - lastSampleAt >= SAMPLE_INTERVAL_MS;
     }
 
     synchronized boolean observe(Image image, long now, String lastPhase) {
+        // Keep native image fingerprint work throttled to 550ms.
+        if (!shouldSample(now)) return false;
+        return observeFingerprint(fingerprint(image), now, lastPhase);
+    }
+
+    /**
+     * Test seam for privacy-safe offline traces. Each synthetic/recorded fingerprint
+     * has one luminance byte per 24x14 cell; no screenshots or model API calls.
+     */
+    synchronized boolean observeFingerprint(byte[] current, long now, String lastPhase) {
         if (!shouldSample(now)) return false;
         lastSampleAt = now;
-
-        byte[] current = fingerprint(image);
-        if (current == null) return false;
+        if (current == null || current.length != GRID_X * GRID_Y) return false;
 
         if (previous == null) {
             previous = current;
@@ -68,7 +82,32 @@ final class SmartFrameDetector {
         }
 
         if (stableSince == 0L || now - stableSince < STABLE_FOR_MS) return false;
-        if (now - lastCloudAt < MIN_CLOUD_INTERVAL_MS) return false;
+        if (now < retryNotBefore) return false;
+        long retryDelay = retryAfterFailure
+                ? MIN_CLOUD_INTERVAL_MS * Math.max(1, consecutiveFailures)
+                : MIN_CLOUD_INTERVAL_MS;
+        // A fresh detector has no prior cloud call: do not impose a phantom cooldown.
+        if (lastCloudAt > 0L && now - lastCloudAt < retryDelay) return false;
+
+        if (lastFailedFingerprint != null) {
+            // Cloud failure must not permanently freeze a static scene, but an
+            // unchanged failed frame may be retried only twice with backoff.
+            boolean changed = diff(lastFailedFingerprint, current, 0, GRID_Y)
+                    >= FAILED_FRAME_CHANGE_MIN;
+            if (changed) {
+                consecutiveFailures = 0;
+                retryAfterFailure = false;
+                lastFailedFingerprint = null;
+                retryNotBefore = 0L;
+            } else if (retryAfterFailure) {
+                retryAfterFailure = false;
+                pendingChange = false;
+                return true;
+            } else if (consecutiveFailures > MAX_AUTO_RETRIES) {
+                // Stop infinite calls until the picture genuinely changes.
+                return false;
+            }
+        }
 
         if (lastAnalyzed == null) {
             // Establish one baseline only after a clearly stable TFT screen.
@@ -122,10 +161,13 @@ final class SmartFrameDetector {
      * baseline only after the cloud analysis succeeds.
      */
     synchronized void markAnalyzed(Image image, long now) {
-        byte[] fp = fingerprint(image);
-        if (fp != null) {
-            pendingAnalyzed = fp;
-            previous = fp;
+        markAnalyzedFingerprint(fingerprint(image), now);
+    }
+
+    synchronized void markAnalyzedFingerprint(byte[] fp, long now) {
+        if (fp != null && fp.length == GRID_X * GRID_Y) {
+            pendingAnalyzed = fp.clone();
+            previous = fp.clone();
         }
         stableSince = now;
         pendingChange = false;
@@ -140,12 +182,42 @@ final class SmartFrameDetector {
         lastCloudAt = now;
         stableSince = now;
         pendingChange = false;
+        consecutiveFailures = 0;
+        retryAfterFailure = false;
+        lastFailedFingerprint = null;
+        retryNotBefore = 0L;
     }
 
     synchronized void discardPendingAnalysis() {
+        discardPendingAnalysis(System.currentTimeMillis());
+    }
+
+    synchronized void discardPendingAnalysis(long now) {
+        if (pendingAnalyzed != null) {
+            if (lastFailedFingerprint == null
+                    || diff(lastFailedFingerprint, pendingAnalyzed, 0, GRID_Y)
+                    >= FAILED_FRAME_CHANGE_MIN) {
+                consecutiveFailures = 0;
+            }
+            lastFailedFingerprint = pendingAnalyzed;
+            consecutiveFailures++;
+            retryAfterFailure = consecutiveFailures <= MAX_AUTO_RETRIES;
+            lastCloudAt = now;
+        }
         pendingAnalyzed = null;
         stableSince = 0L;
         pendingChange = true;
+    }
+
+    synchronized void deferRetryUntil(long notBefore) {
+        // If Smart-Auto fired just before a rate limit was applied, keep its
+        // bounded retry instead of silently consuming it without a screenshot.
+        if (lastFailedFingerprint != null
+                && consecutiveFailures > 0
+                && consecutiveFailures <= MAX_AUTO_RETRIES) {
+            retryAfterFailure = true;
+            retryNotBefore = Math.max(retryNotBefore, notBefore);
+        }
     }
 
     synchronized void markCloudAttempt(long now) {
@@ -160,6 +232,10 @@ final class SmartFrameDetector {
         stableSince = 0L;
         lastCloudAt = 0L;
         pendingChange = false;
+        consecutiveFailures = 0;
+        retryAfterFailure = false;
+        lastFailedFingerprint = null;
+        retryNotBefore = 0L;
     }
 
     private static byte[] fingerprint(Image image) {

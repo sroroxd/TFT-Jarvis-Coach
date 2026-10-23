@@ -210,7 +210,13 @@ public class ScreenCaptureService extends Service {
         }
         if (manual && !queued && now - lastAnalyzeTapAt < 1000L) return;
         if (!analyzing.compareAndSet(false, true)) {
-            if (manual) pendingManualRequest.enqueue();
+            if (manual) {
+                pendingManualRequest.enqueue();
+            } else {
+                // A pending manual analysis can overtake Smart-Auto's posted
+                // trigger. Keep any failed-frame retry eligible afterward.
+                smartFrameDetector.deferRetryUntil(now + 2_000L);
+            }
             return;
         }
         if (manual && !queued) lastAnalyzeTapAt = now;
@@ -219,6 +225,8 @@ public class ScreenCaptureService extends Service {
 
         long remainingMs = rateLimitedUntil - now;
         if (remainingMs > 0) {
+            // Do not lose a queued Smart-Auto retry when the provider is cooling down.
+            smartFrameDetector.deferRetryUntil(rateLimitedUntil);
             analyzing.set(false);
             long remainingSeconds = Math.max(1L, (remainingMs + 999L) / 1000L);
             if (remainingSeconds > 30L) {
@@ -250,6 +258,9 @@ public class ScreenCaptureService extends Service {
             // Ignore the timeout from an earlier, already completed capture.
             if (captureSequence.get() != captureId) return;
             if (awaitingCleanFrame.compareAndSet(true, false)) {
+                // The async clean-frame capture failed to start: don't consume
+                // a bounded failed-cloud retry without actually capturing it.
+                smartFrameDetector.deferRetryUntil(System.currentTimeMillis() + 1_000L);
                 finishAnalysis();
                 restoreOverlay();
                 setCoachText("Kein aktuelles Spielbild verfügbar");
@@ -421,6 +432,7 @@ public class ScreenCaptureService extends Service {
                             rateLimitedUntil,
                             System.currentTimeMillis() + 20_000L
                     );
+                    smartFrameDetector.deferRetryUntil(rateLimitedUntil);
                     setCoachText("KI ausgelastet – letzter Plan nicht aktuell bestätigt");
                 } else {
                     // Never display arbitrary HTTP/model error bodies or prompt fragments.
@@ -449,6 +461,7 @@ public class ScreenCaptureService extends Service {
         long seconds = Math.max(1L, retryAfterSeconds);
         long waitMs = Math.min(86_400_000L, seconds * 1000L);
         rateLimitedUntil = System.currentTimeMillis() + waitMs;
+        smartFrameDetector.deferRetryUntil(rateLimitedUntil);
 
         if (seconds > 30L) {
             setCoachText(source + "-Limit aktiv – später erneut");
