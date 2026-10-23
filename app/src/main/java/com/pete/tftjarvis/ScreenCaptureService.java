@@ -223,15 +223,17 @@ public class ScreenCaptureService extends Service {
         }, 2200L);
     }
 
-    private void runAnalysis(String frame) {
+    private void runAnalysis(String frame, String detailFrame, String detailLabel) {
         final boolean manualRequest = currentAnalysisManual;
         aiExecutor.execute(() -> {
             try {
                 OpenAIClient.CoachResult result;
                 if (ConfigStore.PROVIDER_GEMINI.equals(provider)) {
-                    result = GeminiClient.coach(apiKey, model, frame, matchState.toPromptContext());
+                    result = GeminiClient.coach(
+                            apiKey, model, frame, detailFrame, detailLabel, matchState.toPromptContext());
                 } else {
-                    result = OpenAIClient.coach(apiKey, model, frame, matchState.toPromptContext());
+                    result = OpenAIClient.coach(
+                            apiKey, model, frame, detailFrame, detailLabel, matchState.toPromptContext());
                 }
                 lastPhase = result.phase;
 
@@ -419,9 +421,18 @@ public class ScreenCaptureService extends Service {
             padded.copyPixelsFromBuffer(buffer);
             Bitmap cropped = Bitmap.createBitmap(padded, 0, 0, image.getWidth(), image.getHeight());
             Bitmap upload = downscale(cropped, 1280);
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            upload.compress(Bitmap.CompressFormat.JPEG, 72, out);
-            String cleanFrame = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+            String cleanFrame = encodeJpeg(upload, 72);
+
+            String detailFrame = null;
+            String detailLabel = null;
+            TftRoiSelector.Selection selection = TftRoiSelector.select(cropped, lastPhase);
+            if (selection != null) {
+                Bitmap detailUpload = downscale(selection.bitmap, 1024);
+                detailFrame = encodeJpeg(detailUpload, 80);
+                detailLabel = selection.label;
+                if (detailUpload != selection.bitmap) detailUpload.recycle();
+                selection.bitmap.recycle();
+            }
 
             if (upload != cropped) upload.recycle();
             if (cropped != padded) cropped.recycle();
@@ -429,7 +440,7 @@ public class ScreenCaptureService extends Service {
 
             if (awaitingCleanFrame.compareAndSet(true, false)) {
                 restoreOverlay();
-                runAnalysis(cleanFrame);
+                runAnalysis(cleanFrame, detailFrame, detailLabel);
             }
         } catch (Throwable e) {
             if (awaitingCleanFrame.compareAndSet(true, false)) {
@@ -440,6 +451,12 @@ public class ScreenCaptureService extends Service {
         } finally {
             if (image != null) image.close();
         }
+    }
+
+    private String encodeJpeg(Bitmap bitmap, int quality) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out);
+        return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
     }
 
     private Bitmap downscale(Bitmap source, int maxSide) {
