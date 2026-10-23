@@ -91,7 +91,7 @@ public final class OpenAIClient {
         JSONObject body = new JSONObject();
         body.put("model", model == null || model.trim().isEmpty() ? "gpt-6-luna" : model);
         body.put("store", false);
-        body.put("max_output_tokens", 600);
+        body.put("max_output_tokens", 2000);
 
         JSONArray content = new JSONArray();
         content.put(new JSONObject().put("type", "input_text").put("text",
