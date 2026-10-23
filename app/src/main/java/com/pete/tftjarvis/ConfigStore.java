@@ -19,6 +19,7 @@ public final class ConfigStore {
     private static final String KEY_ALIAS = "tft_jarvis_api_key";
     private static final String P_API = "api";
     private static final String P_MODEL = "model";
+    private static final String P_SMART_AUTO = "smart_auto";
 
     private ConfigStore() {}
 
@@ -49,6 +50,17 @@ public final class ConfigStore {
 
     public static String loadModel(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(P_MODEL, "gpt-6-luna");
+    }
+
+    public static boolean loadSmartAuto(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(P_SMART_AUTO, true);
+    }
+
+    public static void saveSmartAuto(Context context, boolean enabled) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(P_SMART_AUTO, enabled)
+                .apply();
     }
 
 
