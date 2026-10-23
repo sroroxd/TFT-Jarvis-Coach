@@ -1,46 +1,104 @@
-name: Publish JARVIS APK
+name: Publish directly installable JARVIS APK
+
 on:
-  workflow_dispatch:
   push:
-    tags:
-      - 'v0.9.*'
+    branches: [ "main" ]
+    paths:
+      - "app/build.gradle"
+      - ".github/signing/jarvis-release.p12.asc"
+  workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Check signing initialization
+        id: signing
+        run: |
+          if [ -s .github/signing/jarvis-release.p12.asc ] && [ -s .github/signing/cert-sha256.txt ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No signing identity yet. Add secret JARVIS_SIGNING_PASSWORD and run Initialize JARVIS signing key once."
+          fi
       - uses: actions/setup-java@v4
+        if: steps.signing.outputs.ready == 'true'
         with:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+        if: steps.signing.outputs.ready == 'true'
         with:
           gradle-version: '8.9'
-      - name: Configure stable signing
+      - name: Restore permanent signing identity
+        if: steps.signing.outputs.ready == 'true'
         env:
-          SIGNING_KEYSTORE_BASE64: ${{ secrets.JARVIS_SIGNING_KEYSTORE_BASE64 }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.JARVIS_SIGNING_STORE_PASSWORD }}
-          SIGNING_KEY_ALIAS: ${{ secrets.JARVIS_SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.JARVIS_SIGNING_KEY_PASSWORD }}
+          JARVIS_SIGNING_PASSWORD: ${{ secrets.JARVIS_SIGNING_PASSWORD }}
         run: |
-          if [ -z "$SIGNING_KEYSTORE_BASE64" ] || [ -z "$SIGNING_STORE_PASSWORD" ] || [ -z "$SIGNING_KEY_ALIAS" ] || [ -z "$SIGNING_KEY_PASSWORD" ]; then
-            echo "::error::Stable signing secrets are required. Never publish an ephemeral debug-signed update."
+          set -euo pipefail
+          if [ "${#JARVIS_SIGNING_PASSWORD}" -lt 32 ]; then
+            echo "::error::Missing or weak repository Actions secret JARVIS_SIGNING_PASSWORD."
             exit 1
           fi
-          echo "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/jarvis-release.jks"
-          echo "JARVIS_KEYSTORE_PATH=$RUNNER_TEMP/jarvis-release.jks" >> "$GITHUB_ENV"
-      - name: Build release APK
+          printf '%s' "$JARVIS_SIGNING_PASSWORD" | \
+            gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-fd 0 \
+              --output "$RUNNER_TEMP/jarvis-release.p12" \
+              --decrypt .github/signing/jarvis-release.p12.asc
+          actual=$(keytool -list -v -keystore "$RUNNER_TEMP/jarvis-release.p12" \
+            -storetype PKCS12 -storepass "$JARVIS_SIGNING_PASSWORD" \
+            -alias jarvis-release | sed -n 's/.*SHA256: //p' | head -n 1)
+          expected=$(cat .github/signing/cert-sha256.txt)
+          if [ -z "$actual" ] || [ "$actual" != "$expected" ]; then
+            echo "::error::Signing certificate fingerprint mismatch. Refusing to publish a non-upgradable APK."
+            exit 1
+          fi
+          echo "JARVIS_KEYSTORE_PATH=$RUNNER_TEMP/jarvis-release.p12" >> "$GITHUB_ENV"
+      - name: Run tests and build signed release APK
+        if: steps.signing.outputs.ready == 'true'
         env:
-          JARVIS_STORE_PASSWORD: ${{ secrets.JARVIS_SIGNING_STORE_PASSWORD }}
-          JARVIS_KEY_ALIAS: ${{ secrets.JARVIS_SIGNING_KEY_ALIAS }}
-          JARVIS_KEY_PASSWORD: ${{ secrets.JARVIS_SIGNING_KEY_PASSWORD }}
+          JARVIS_SIGNING_PASSWORD: ${{ secrets.JARVIS_SIGNING_PASSWORD }}
         run: gradle --no-daemon testDebugUnitTest assembleRelease --stacktrace
-      - name: Publish direct APK
+      - name: Verify APK signer and publish direct download
+        if: steps.signing.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/release/app-release.apk JARVIS-${GITHUB_REF_NAME}.apk
-          gh release create "$GITHUB_REF_NAME" "JARVIS-${GITHUB_REF_NAME}.apk" --title "JARVIS $GITHUB_REF_NAME" --generate-notes
+          set -euo pipefail
+          VERSION=$(sed -nE "s/^[[:space:]]*versionName[[:space:]]+'([^']+)'.*/\\1/p" app/build.gradle | head -n 1)
+          CODE=$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\\1/p' app/build.gradle | head -n 1)
+          if [[ ! "$VERSION" =~ ^0\\.9\\.[0-9]+(-[a-z0-9.]+)?$ ]] || [ -z "$CODE" ] || [ "$CODE" -le 29 ]; then
+            echo "::error::Release version or monotonically increasing versionCode invalid."
+            exit 1
+          fi
+          TAG="v$VERSION"
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::Android APK signature verifier unavailable."
+            exit 1
+          fi
+          "$APKSIGNER" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/apk-verification.txt"
+          ACTUAL=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apk-verification.txt" | head -n 1 | tr '[:upper:]' '[:lower:]')
+          EXPECTED=$(tr -d ':[:space:]' < .github/signing/cert-sha256.txt | tr '[:upper:]' '[:lower:]')
+          if [ -z "$ACTUAL" ] || [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::APK signer differs from permanent signing identity."
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Version $TAG has already been published. Increase versionName and versionCode."
+            exit 1
+          fi
+          cp "$APK" "JARVIS-$VERSION.apk"
+          extra=()
+          if [[ "$VERSION" == *-beta* ]]; then extra+=(--prerelease); fi
+          gh release create "$TAG" "JARVIS-$VERSION.apk" \
+            --target "$GITHUB_SHA" --title "JARVIS $VERSION" \
+            --notes "Direkt installierbare, dauerhaft signierte Android-APK. Voraussetzung für Updates: dieselbe Signatur und steigender versionCode. Beim Wechsel von älteren Debug-APKs kann einmalig eine Neuinstallation nötig sein." \
+            "${extra[@]}"
