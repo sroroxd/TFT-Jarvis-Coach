@@ -56,6 +56,7 @@ public class ScreenCaptureService extends Service {
     private final AtomicBoolean analyzing = new AtomicBoolean(false);
     private final AtomicBoolean awaitingCleanFrame = new AtomicBoolean(false);
     private final Handler mainHandler = new Handler();
+    private volatile long rateLimitedUntil = 0L;
 
     private String apiKey = "";
     private String model = "gpt-6-luna";
@@ -143,6 +144,15 @@ public class ScreenCaptureService extends Service {
 
     private void analyzeCurrentFrame() {
         if (!analyzing.compareAndSet(false, true)) return;
+
+        long remainingMs = rateLimitedUntil - System.currentTimeMillis();
+        if (remainingMs > 0) {
+            analyzing.set(false);
+            long remainingSeconds = Math.max(1L, (remainingMs + 999L) / 1000L);
+            setCoachText("Rate-Limit – noch " + remainingSeconds + " s");
+            return;
+        }
+
         if (apiKey == null || apiKey.trim().isEmpty()) {
             analyzing.set(false);
             setCoachText("API-Key fehlt");
@@ -191,6 +201,9 @@ public class ScreenCaptureService extends Service {
                 }
 
                 publishCall(result.phase, result.call, result.plan, showResetNotice);
+            } catch (OpenAIClient.RateLimitException e) {
+                rateLimitedUntil = System.currentTimeMillis() + (e.retryAfterSeconds * 1000L);
+                setCoachText("Rate-Limit – " + e.retryAfterSeconds + " s Pause");
             } catch (Exception e) {
                 String msg = e.getMessage() == null ? "Analysefehler" : e.getMessage();
                 if (msg.length() > 95) msg = msg.substring(0, 95) + "…";
