@@ -69,7 +69,7 @@ public class ScreenCaptureService extends Service {
     private String provider = ConfigStore.PROVIDER_GEMINI;
     private String apiKey = "";
     private String model = GeminiClient.DEFAULT_MODEL;
-    private String previousState = "";
+    private final MatchState matchState = new MatchState();
 
     private MediaProjection mediaProjection;
     private VirtualDisplay virtualDisplay;
@@ -229,29 +229,23 @@ public class ScreenCaptureService extends Service {
             try {
                 OpenAIClient.CoachResult result;
                 if (ConfigStore.PROVIDER_GEMINI.equals(provider)) {
-                    result = GeminiClient.coach(apiKey, model, frame, previousState);
+                    result = GeminiClient.coach(apiKey, model, frame, matchState.toPromptContext());
                 } else {
-                    result = OpenAIClient.coach(apiKey, model, frame, previousState);
+                    result = OpenAIClient.coach(apiKey, model, frame, matchState.toPromptContext());
                 }
                 lastPhase = result.phase;
 
-                boolean hadMatchMemory = previousState != null && !previousState.trim().isEmpty();
+                boolean hadMatchMemory = matchState.hasMemory();
                 boolean resetByPreMatch = "VOR_MATCH".equals(result.phase);
                 boolean resetByNewMatch = result.newMatch;
                 boolean showResetNotice = resetByNewMatch || (resetByPreMatch && hadMatchMemory);
 
                 if (resetByPreMatch || resetByNewMatch) {
-                    previousState = "";
+                    matchState.clear();
                 }
 
                 if (!resetByPreMatch) {
-                    StringBuilder memory = new StringBuilder();
-                    if (result.state != null && !result.state.trim().isEmpty()) memory.append(result.state.trim());
-                    if (result.plan != null && !result.plan.trim().isEmpty()) {
-                        if (memory.length() > 0) memory.append(" | ");
-                        memory.append("Letzter Plan: ").append(result.plan.trim());
-                    }
-                    if (memory.length() > 0) previousState = memory.toString();
+                    matchState.apply(result);
                 }
 
                 publishCall(result.phase, result.call, result.plan, result.priority, result.confidence,
@@ -622,7 +616,7 @@ public class ScreenCaptureService extends Service {
                 return true;
             }
             if ("Gedächtnis zurücksetzen".equals(title)) {
-                previousState = "";
+                matchState.clear();
                 lastPhase = "UNKLAR";
                 lastDetailText = "";
                 lastSpokenKey = "";
