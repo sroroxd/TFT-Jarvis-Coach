@@ -21,12 +21,49 @@ jobs:
           gradle-version: '8.9'
       - name: Unit tests
         run: gradle --no-daemon testDebugUnitTest --stacktrace
+      - name: Static Android lint
+        run: gradle --no-daemon lintDebug --stacktrace
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug --stacktrace
+      - name: Audit the published 0.9.0 APK binary (not just source)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/published-apk"
+          gh release download v0.9.0-beta1 \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'JARVIS-0.9.0-beta1.apk' \
+            --dir "$RUNNER_TEMP/published-apk"
+          APK="$RUNNER_TEMP/published-apk/JARVIS-0.9.0-beta1.apk"
+          test -s "$APK"
+          unzip -t "$APK" > /dev/null
+          ACTUAL_DIGEST=$(sha256sum "$APK" | cut -d' ' -f1)
+          RELEASE_DIGEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.9.0-beta1" \
+            --jq '.assets[] | select(.name=="JARVIS-0.9.0-beta1.apk") | .digest' | sed 's/^sha256://')
+          test -n "$RELEASE_DIGEST"
+          test "$ACTUAL_DIGEST" = "$RELEASE_DIGEST"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)
+          AAPT=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name aapt | sort -V | tail -n 1)
+          test -n "$APKSIGNER" && test -n "$AAPT"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/published-cert.txt"
+          # apksigner reports the signing scheme (V2) in modern SDKs.
+          CERT=$(sed -nE 's/^[[:space:]]*V[0-9]+ Signer: certificate SHA-256 digest:[[:space:]]*([0-9a-fA-F:]+)[[:space:]]*$/\1/p' "$RUNNER_TEMP/published-cert.txt" | head -n 1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+          EXPECTED=$(tr -d ':[:space:]' < .github/signing/cert-sha256.txt | tr '[:upper:]' '[:lower:]')
+          test -n "$CERT" && test "$CERT" = "$EXPECTED"
+          "$AAPT" dump badging "$APK" > "$RUNNER_TEMP/published-badging.txt"
+          grep -q "^package: name='com.pete.tftjarvis' versionCode='30' versionName='0.9.0-beta1'" "$RUNNER_TEMP/published-badging.txt"
+          grep -q "launchable-activity: name='com.pete.tftjarvis.MainActivity'" "$RUNNER_TEMP/published-badging.txt"
+          if grep -q '^application-debuggable' "$RUNNER_TEMP/published-badging.txt"; then
+            echo "::error::Published 0.9.0 APK is unexpectedly debuggable"
+            exit 1
+          fi
+          echo "Published APK verified: $ACTUAL_DIGEST, signer=$CERT, versionCode=30"
       - name: Create throwaway signing identity for CI only
         run: |
           set -euo pipefail
           TEMP_PASSWORD=$(openssl rand -hex 24)
+          echo "::add-mask::$TEMP_PASSWORD"
           keytool -genkeypair -noprompt \
             -keystore "$RUNNER_TEMP/ci-release.p12" -storetype PKCS12 \
             -alias jarvis-release -keyalg RSA -keysize 3072 -validity 2 \
@@ -53,6 +90,29 @@ jobs:
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)
           test -n "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+      - name: Validate actual APK package, launchability and release flags
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          AAPT=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name aapt | sort -V | tail -n 1)
+          test -n "$AAPT"
+          "$AAPT" dump badging "$APK" > "$RUNNER_TEMP/jarvis-badging.txt"
+          PKG=$(sed -nE "s/^package: name='([^']+)'.*/\1/p" "$RUNNER_TEMP/jarvis-badging.txt" | head -n 1)
+          APK_CODE=$(sed -nE "s/^package: .*versionCode='([0-9]+)'.*/\1/p" "$RUNNER_TEMP/jarvis-badging.txt" | head -n 1)
+          APK_NAME=$(sed -nE "s/^package: .*versionName='([^']+)'.*/\1/p" "$RUNNER_TEMP/jarvis-badging.txt" | head -n 1)
+          SOURCE_CODE=$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\1/p' app/build.gradle | head -n 1)
+          SOURCE_NAME=$(sed -nE "s/^[[:space:]]*versionName[[:space:]]+'([^']+)'.*/\1/p" app/build.gradle | head -n 1)
+          test "$PKG" = "com.pete.tftjarvis"
+          test "$APK_CODE" = "$SOURCE_CODE"
+          test "$APK_NAME" = "$SOURCE_NAME"
+          grep -q "launchable-activity: name='com.pete.tftjarvis.MainActivity'" "$RUNNER_TEMP/jarvis-badging.txt"
+          if grep -q '^application-debuggable' "$RUNNER_TEMP/jarvis-badging.txt"; then
+            echo "::error::Production APK is debuggable."
+            exit 1
+          fi
+          echo "Valid installable APK metadata: $PKG / $APK_NAME ($APK_CODE)"
       - name: Ensure no plaintext signing keys are committed
         run: |
           if git ls-files '*.p12' '*.jks' '*.keystore' | grep .; then
@@ -61,6 +121,6 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-0.9.0-beta1-debug
+          name: JARVIS-ci-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

@@ -41,6 +41,7 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ScreenCaptureService extends Service {
     public static final String EXTRA_RESULT_CODE = "resultCode";
@@ -60,6 +61,8 @@ public class ScreenCaptureService extends Service {
     private final SmartFrameDetector smartFrameDetector = new SmartFrameDetector();
     private final LocalHudPerception localHudPerception = new LocalHudPerception();
     private final EvidenceLedger evidenceLedger = new EvidenceLedger();
+    // Discard pending cloud replies if the player resets the match memory.
+    private final AtomicLong stateGeneration = new AtomicLong(0L);
     private volatile long rateLimitedUntil = 0L;
     private volatile long lastAnalyzeTapAt = 0L;
     private volatile boolean smartAutoEnabled = true;
@@ -229,8 +232,11 @@ public class ScreenCaptureService extends Service {
     private void runAnalysis(String frame, String detailFrame, String detailLabel,
                              LocalHudPerception.Observation localHud) {
         final boolean manualRequest = currentAnalysisManual;
+        final long expectedGeneration = stateGeneration.get();
+        final long capturedAt = localHud == null ? 0L : localHud.observedAt;
         aiExecutor.execute(() -> {
             try {
+                if (expectedGeneration != stateGeneration.get()) return;
                 evidenceLedger.recordLocal(localHud);
                 String stateContext = matchState.toPromptContext() + evidenceLedger.toPromptContext();
 
@@ -243,7 +249,20 @@ public class ScreenCaptureService extends Service {
                             apiKey, model, frame, detailFrame, detailLabel, stateContext);
                 }
 
-                evidenceLedger.recordCloud(result);
+                if (expectedGeneration != stateGeneration.get()) {
+                    // RESET was pressed during the network request. Never resurrect old state.
+                    evidenceLedger.clear();
+                    smartFrameDetector.discardPendingAnalysis();
+                    return;
+                }
+                if (FrameFreshnessGate.shouldDiscard(capturedAt, System.currentTimeMillis())) {
+                    // Don't offer decisions for a screenshot more than 20 seconds old.
+                    evidenceLedger.clear();
+                    smartFrameDetector.discardPendingAnalysis();
+                    setCoachText("Bildanalyse veraltet – warte auf aktuelles Spielbild");
+                    return;
+                }
+                evidenceLedger.recordCloud(result, capturedAt);
                 DecisionGate.GateResult gated = DecisionGate.validate(result, matchState, evidenceLedger);
                 result = gated.result;
                 if (result == null) throw new Exception("Entscheidung konnte nicht verifiziert werden");
@@ -754,6 +773,7 @@ public class ScreenCaptureService extends Service {
                 return true;
             }
             if ("Gedächtnis zurücksetzen".equals(title)) {
+                stateGeneration.incrementAndGet();
                 matchState.clear();
                 evidenceLedger.clear();
                 lastPhase = "UNKLAR";
@@ -900,6 +920,7 @@ public class ScreenCaptureService extends Service {
 
     @Override
     public void onDestroy() {
+        stateGeneration.incrementAndGet();
         awaitingCleanFrame.set(false);
         mainHandler.removeCallbacks(hideTransientCall);
         instance = null;
