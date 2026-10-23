@@ -25,7 +25,8 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No signing identity yet. Add secret JARVIS_SIGNING_PASSWORD and run Initialize JARVIS signing key once."
+            echo "::error::Signing not initialized. Add secret JARVIS_SIGNING_PASSWORD and run Initialize JARVIS signing key once; no APK has been released."
+            exit 1
           fi
       - uses: actions/setup-java@v4
         if: steps.signing.outputs.ready == 'true'
