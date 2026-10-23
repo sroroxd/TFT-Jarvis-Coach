@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 17
-        versionName '0.6.7-priority-voice'
+        versionCode 18
+        versionName '0.7.0-gemini-free'
     }
 
     compileOptions {
