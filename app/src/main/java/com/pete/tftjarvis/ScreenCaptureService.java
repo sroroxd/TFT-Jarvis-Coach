@@ -266,7 +266,8 @@ public class ScreenCaptureService extends Service {
                 if ("UNKLAR".equals(resultPhase)
                         && "NIEDRIG".equals(result.confidence)
                         && "VOR_MATCH".equals(lastPhase)
-                        && !matchState.hasMemory()) {
+                        && !matchState.hasMemory()
+                        && !isEarlyMatchStage(localStage)) {
                     lastPhase = "VOR_MATCH";
                     smartFrameDetector.commitAnalyzed(System.currentTimeMillis());
                     publishCall("VOR_MATCH", "Warte auf Matchstart", "", "INFO", "MITTEL",
