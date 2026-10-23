@@ -202,8 +202,14 @@ public class ScreenCaptureService extends Service {
 
                 publishCall(result.phase, result.call, result.plan, showResetNotice);
             } catch (OpenAIClient.RateLimitException e) {
-                rateLimitedUntil = System.currentTimeMillis() + (e.retryAfterSeconds * 1000L);
-                setCoachText("Rate-Limit – " + e.retryAfterSeconds + " s Pause");
+                if (e.retryAfterSeconds > 300) {
+                    // Do not lock the UI for hours. Keep a short local cooldown and explain the long API window.
+                    rateLimitedUntil = System.currentTimeMillis() + 60_000L;
+                    setCoachText("OpenAI-Limit länger aktiv – später erneut");
+                } else {
+                    rateLimitedUntil = System.currentTimeMillis() + (e.retryAfterSeconds * 1000L);
+                    setCoachText("Rate-Limit – " + e.retryAfterSeconds + " s Pause");
+                }
             } catch (Exception e) {
                 String msg = e.getMessage() == null ? "Analysefehler" : e.getMessage();
                 if (msg.length() > 95) msg = msg.substring(0, 95) + "…";
@@ -302,9 +308,9 @@ public class ScreenCaptureService extends Service {
             );
             padded.copyPixelsFromBuffer(buffer);
             Bitmap cropped = Bitmap.createBitmap(padded, 0, 0, image.getWidth(), image.getHeight());
-            Bitmap upload = downscale(cropped, 1920);
+            Bitmap upload = downscale(cropped, 1280);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-            upload.compress(Bitmap.CompressFormat.JPEG, 78, out);
+            upload.compress(Bitmap.CompressFormat.JPEG, 72, out);
             String cleanFrame = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
 
             if (upload != cropped) upload.recycle();
