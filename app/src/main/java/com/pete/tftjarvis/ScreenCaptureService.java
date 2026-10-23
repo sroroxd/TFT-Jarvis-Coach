@@ -86,6 +86,8 @@ public class ScreenCaptureService extends Service {
     private HandlerThread captureThread;
     private Handler captureHandler;
     private volatile long cleanFrameRequestedAt;
+    // Tied to the BEGINNING of capture, not the later OCR/network request.
+    private volatile long activeCaptureGeneration;
 
     private WindowManager windowManager;
     private WindowManager.LayoutParams overlayParams;
@@ -205,6 +207,7 @@ public class ScreenCaptureService extends Service {
         }
         if (manual && !queued) lastAnalyzeTapAt = now;
         currentAnalysisManual = manual;
+        activeCaptureGeneration = stateGeneration.get();
 
         long remainingMs = rateLimitedUntil - now;
         if (remainingMs > 0) {
@@ -249,7 +252,7 @@ public class ScreenCaptureService extends Service {
     private void runAnalysis(String frame, String detailFrame, String detailLabel,
                              LocalHudPerception.Observation localHud) {
         final boolean manualRequest = currentAnalysisManual;
-        final long expectedGeneration = stateGeneration.get();
+        final long expectedGeneration = activeCaptureGeneration;
         final long capturedAt = localHud == null ? 0L : localHud.observedAt;
         aiExecutor.execute(() -> {
             try {
