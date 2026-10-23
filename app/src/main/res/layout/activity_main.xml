@@ -22,7 +22,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:text="Set 18 · Patch 18.5 · Platz-1-Live-Coaching · Bildschirm → KI → Overlay + Sprache"
+            android:text="Set 18 · Patch 18.5 · Gemini Free · Smart-Auto · Overlay + Sprache"
             android:textColor="#B9B9B9"
             android:textSize="14sp" />
 
@@ -42,7 +42,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:hint="OpenAI API-Key"
+            android:hint="Gemini API-Key (Google AI Studio)"
             android:inputType="textPassword"
             android:textColor="@color/white"
             android:textColorHint="#888888" />
@@ -53,7 +53,7 @@
             android:layout_height="wrap_content"
             android:hint="Modell"
             android:singleLine="true"
-            android:text="gpt-6-luna"
+            android:text="gemini-3.8-flash"
             android:textColor="@color/white"
             android:textColorHint="#888888" />
 
@@ -90,7 +90,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="Run-Profil: Set 18 · Patch 18.5. Im Spiel erscheint oben das JARVIS-Overlay. ANALYSE bewertet Board, Synergien und nächste Schritte. JARVIS analysiert nur auf deinen Befehl. RESET löscht den Match-Kurzstatus. Keine automatischen Klicks im Spiel."
+            android:text="Run-Profil: Set 18 · Patch 18.5. Standard: Gemini 3.8 Flash im kostenlosen Tier, automatischer einmaliger Fallback auf Gemini 3.5 Flash-Lite. Smart-Auto erkennt relevante Bildschirmwechsel lokal; ANALYSE bleibt manuell verfügbar. Keine automatischen Klicks im Spiel."
             android:textColor="#B0B0B0"
             android:textSize="14sp" />
 
