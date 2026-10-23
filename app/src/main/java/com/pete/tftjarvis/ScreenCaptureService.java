@@ -66,7 +66,7 @@ public class ScreenCaptureService extends Service {
     private long lastSpokenAt = 0L;
 
     private String apiKey = "";
-    private String model = "gpt-6-luna";
+    private String model = GeminiClient.DEFAULT_MODEL;
     private String previousState = "";
 
     private MediaProjection mediaProjection;
@@ -165,7 +165,7 @@ public class ScreenCaptureService extends Service {
             analyzing.set(false);
             long remainingSeconds = Math.max(1L, (remainingMs + 999L) / 1000L);
             if (remainingSeconds > 30L) {
-                setCoachText("Cloud pausiert – später erneut");
+                setCoachText("Gemini Free pausiert – später erneut");
             } else {
                 setCoachText("Rate-Limit – noch " + remainingSeconds + " s");
             }
@@ -174,7 +174,7 @@ public class ScreenCaptureService extends Service {
 
         if (apiKey == null || apiKey.trim().isEmpty()) {
             analyzing.set(false);
-            setCoachText("API-Key fehlt");
+            setCoachText("Gemini API-Key fehlt");
             return;
         }
 
@@ -199,7 +199,7 @@ public class ScreenCaptureService extends Service {
         final boolean manualRequest = currentAnalysisManual;
         aiExecutor.execute(() -> {
             try {
-                OpenAIClient.CoachResult result = OpenAIClient.coach(apiKey, model, frame, previousState);
+                OpenAIClient.CoachResult result = GeminiClient.coach(apiKey, model, frame, previousState);
                 lastPhase = result.phase;
 
                 boolean hadMatchMemory = previousState != null && !previousState.trim().isEmpty();
@@ -223,14 +223,14 @@ public class ScreenCaptureService extends Service {
 
                 publishCall(result.phase, result.call, result.plan, result.priority, result.confidence,
                         showResetNotice, manualRequest);
-            } catch (OpenAIClient.RateLimitException e) {
+            } catch (GeminiClient.RateLimitException e) {
                 long serverWaitMs = Math.min(86_400_000L, Math.max(1L, e.retryAfterSeconds) * 1000L);
                 rateLimitedUntil = System.currentTimeMillis() + serverWaitMs;
                 if (e.retryAfterSeconds > 30) {
                     // Respect the server's retry window; do not turn a long limit into a new request after 60 seconds.
                     setCoachText("Cloud pausiert – später erneut");
                 } else {
-                    setCoachText("Rate-Limit – " + e.retryAfterSeconds + " s Pause");
+                    setCoachText("Gemini-Limit – " + e.retryAfterSeconds + " s Pause");
                 }
             } catch (Exception e) {
                 String msg = e.getMessage() == null ? "Analysefehler" : e.getMessage();
