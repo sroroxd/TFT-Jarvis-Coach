@@ -13,11 +13,13 @@ import java.nio.charset.StandardCharsets;
 
 public final class OpenAIClient {
     public static final class CoachResult {
+        public final String phase;
         public final String call;
         public final String plan;
         public final String state;
 
-        CoachResult(String call, String plan, String state) {
+        CoachResult(String phase, String call, String plan, String state) {
+            this.phase = phase;
             this.call = call;
             this.plan = plan;
             this.state = state;
@@ -44,6 +46,12 @@ public final class OpenAIClient {
                 Jede Empfehlung soll die Wahrscheinlichkeit maximieren, diese Lobby zu gewinnen und Platz 1 zu erreichen.
                 Spiele nicht automatisch auf eine sichere Top-4-Platzierung, solange eine realistische Siegchance besteht.
                 Wenn Platz 1 realistisch nicht mehr erreichbar ist, sichere die bestmögliche Restplatzierung.
+
+                Phasenerkennung:
+                - Ordne jeden Screenshot genau einer Phase zu: VOR_MATCH, PLANUNG, SHOP, AUGMENTIERUNG, KARUSSELL, KAMPF oder UNKLAR.
+                - In KAMPF keine Kauf-, Roll-, Level- oder Itemaktion erfinden. call = "Warte auf Planungsphase", außer eine unmittelbar sichtbare Positionierungsentscheidung ist vor Kampfbeginn noch möglich.
+                - In VOR_MATCH nur Navigationsaktionen nennen.
+                - In UNKLAR lieber "Nicht sicher erkennbar" statt raten.
 
                 Bildregeln:
                 - Nutze nur Informationen, die im aktuellen Screenshot eindeutig erkennbar sind.
@@ -85,6 +93,7 @@ public final class OpenAIClient {
                 - Berücksichtige aktuelle Lebenspunkte/Pick-Reihenfolge nur soweit sichtbar; erfinde keine Erreichbarkeit.
 
                 Ausgabe:
+                - phase = eine der Phasen VOR_MATCH, PLANUNG, SHOP, AUGMENTIERUNG, KARUSSELL, KAMPF, UNKLAR.
                 - call = bis zu drei unmittelbar ausführbare Aktionen in einem Satz, maximal 16 deutsche Wörter.
                 - plan = strategischer Kurzplan mit Synergie-/Board-Richtung, Carry/Tank und nächstem Meilenstein, maximal 32 deutsche Wörter.
                 - state = sicher erkannter Match-Kurzstatus für die nächste Analyse, maximal 52 deutsche Wörter.
@@ -93,7 +102,7 @@ public final class OpenAIClient {
                 - Keine Erklärtexte außerhalb des JSON.
 
                 Antworte NUR als kompaktes JSON-Objekt:
-                {"call":"bis zu drei Aktionen, maximal 16 deutsche Wörter","plan":"maximal 32 deutsche Wörter","state":"maximal 52 deutsche Wörter"}
+                {"phase":"VOR_MATCH|PLANUNG|SHOP|AUGMENTIERUNG|KARUSSELL|KAMPF|UNKLAR","call":"bis zu drei Aktionen, maximal 16 deutsche Wörter","plan":"maximal 32 deutsche Wörter","state":"maximal 52 deutsche Wörter"}
                 """;
 
         JSONObject body = new JSONObject();
@@ -132,13 +141,17 @@ public final class OpenAIClient {
 
         try {
             JSONObject parsed = new JSONObject(stripCodeFence(text));
+            String phase = normalizePhase(parsed.optString("phase", "UNKLAR"));
             String call = clampWords(parsed.optString("call", "Nicht sicher erkennbar"), 16);
             String plan = clampWords(parsed.optString("plan", ""), 32);
             String state = clampWords(parsed.optString("state", ""), 52);
             if (call.trim().isEmpty()) call = "Nicht sicher erkennbar";
-            return new CoachResult(call, plan, state);
+            if ("KAMPF".equals(phase) && ("Nicht sicher erkennbar".equals(call) || call.trim().isEmpty())) {
+                call = "Warte auf Planungsphase";
+            }
+            return new CoachResult(phase, call, plan, state);
         } catch (Exception ignored) {
-            return new CoachResult(clampWords(text, 16), "", "");
+            return new CoachResult("UNKLAR", clampWords(text, 16), "", "");
         }
     }
 
@@ -184,6 +197,23 @@ public final class OpenAIClient {
             if (end >= 0) s = s.substring(0, end);
         }
         return s.trim();
+    }
+
+    private static String normalizePhase(String phase) {
+        if (phase == null) return "UNKLAR";
+        String p = phase.trim().toUpperCase();
+        switch (p) {
+            case "VOR_MATCH":
+            case "PLANUNG":
+            case "SHOP":
+            case "AUGMENTIERUNG":
+            case "KARUSSELL":
+            case "KAMPF":
+            case "UNKLAR":
+                return p;
+            default:
+                return "UNKLAR";
+        }
     }
 
     private static String compactApiError(int code, String raw) {
