@@ -219,6 +219,8 @@ public class ScreenCaptureService extends Service {
 
         long remainingMs = rateLimitedUntil - now;
         if (remainingMs > 0) {
+            // Do not lose a queued Smart-Auto retry when the provider is cooling down.
+            smartFrameDetector.deferRetryUntil(rateLimitedUntil);
             analyzing.set(false);
             long remainingSeconds = Math.max(1L, (remainingMs + 999L) / 1000L);
             if (remainingSeconds > 30L) {
@@ -421,6 +423,7 @@ public class ScreenCaptureService extends Service {
                             rateLimitedUntil,
                             System.currentTimeMillis() + 20_000L
                     );
+                    smartFrameDetector.deferRetryUntil(rateLimitedUntil);
                     setCoachText("KI ausgelastet – letzter Plan nicht aktuell bestätigt");
                 } else {
                     // Never display arbitrary HTTP/model error bodies or prompt fragments.
@@ -449,6 +452,7 @@ public class ScreenCaptureService extends Service {
         long seconds = Math.max(1L, retryAfterSeconds);
         long waitMs = Math.min(86_400_000L, seconds * 1000L);
         rateLimitedUntil = System.currentTimeMillis() + waitMs;
+        smartFrameDetector.deferRetryUntil(rateLimitedUntil);
 
         if (seconds > 30L) {
             setCoachText(source + "-Limit aktiv – später erneut");
