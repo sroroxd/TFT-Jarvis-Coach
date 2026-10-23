@@ -40,6 +40,9 @@ final class EvidenceLedger {
     }
 
     private static final long FRESH_CONFLICT_MS = 5_000L;
+    // OCR and cloud can only corroborate each other when measured from the
+    // same screenshot. Values a few seconds apart may be different rounds.
+    private static final long SAME_FRAME_TOLERANCE_MS = 250L;
     private static final long PROMPT_MAX_AGE_MS = 45_000L;
 
     private final Map<String, Evidence> latest = new LinkedHashMap<>();
@@ -161,8 +164,8 @@ final class EvidenceLedger {
 
         Evidence old = latest.get(key);
         if (old != null && old.epoch == epoch) {
-            boolean fresh = Math.abs(at - old.observedAt) <= FRESH_CONFLICT_MS;
-            if (fresh && sameValue(old.value, value)) {
+            boolean sameFrame = Math.abs(at - old.observedAt) <= SAME_FRAME_TOLERANCE_MS;
+            if (sameFrame && sameValue(old.value, value)) {
                 // Repeated observations from one modality are not independent evidence.
                 // Only a local OCR + cloud vision agreement can be marked VERIFIED.
                 boolean independent = (old.source == Source.LOCAL_OCR && source == Source.CLOUD_VISION)
@@ -176,7 +179,7 @@ final class EvidenceLedger {
                 return;
             }
 
-            if (fresh && !sameValue(old.value, value)) {
+            if (sameFrame && !sameValue(old.value, value)) {
                 boolean contradictsLocal = isTrustedLocal(old.source)
                         && source == Source.CLOUD_VISION;
                 boolean contradictsCloud = old.source == Source.CLOUD_VISION
