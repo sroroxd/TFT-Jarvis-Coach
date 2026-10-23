@@ -258,7 +258,9 @@ final class LocalHudPerception implements AutoCloseable {
         int w = source.getWidth();
         int h = source.getHeight();
         int largest = Math.max(w, h);
-        if (largest <= maxSide) return source;
+        // Always own the OCR input, even on small/portrait screenshots:
+        // callers may recycle their source while ML Kit is still running.
+        if (largest <= maxSide) return source.copy(Bitmap.Config.ARGB_8888, false);
         float scale = (float) maxSide / largest;
         return Bitmap.createScaledBitmap(
                 source,
