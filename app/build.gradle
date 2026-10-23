@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 11
-        versionName '0.6.1-smart-overlay'
+        versionCode 12
+        versionName '0.6.2-manual-analysis'
     }
 
     compileOptions {
