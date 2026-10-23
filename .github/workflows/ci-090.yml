@@ -63,6 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           TEMP_PASSWORD=$(openssl rand -hex 24)
+          echo "::add-mask::$TEMP_PASSWORD"
           keytool -genkeypair -noprompt \
             -keystore "$RUNNER_TEMP/ci-release.p12" -storetype PKCS12 \
             -alias jarvis-release -keyalg RSA -keysize 3072 -validity 2 \
