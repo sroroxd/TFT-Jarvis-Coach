@@ -17,12 +17,14 @@ public final class OpenAIClient {
         public final String call;
         public final String plan;
         public final String state;
+        public final boolean newMatch;
 
-        CoachResult(String phase, String call, String plan, String state) {
+        CoachResult(String phase, String call, String plan, String state, boolean newMatch) {
             this.phase = phase;
             this.call = call;
             this.plan = plan;
             this.state = state;
+            this.newMatch = newMatch;
         }
     }
 
@@ -52,6 +54,13 @@ public final class OpenAIClient {
                 - In KAMPF keine Kauf-, Roll-, Level- oder Itemaktion erfinden. call = "Warte auf Planungsphase", außer eine unmittelbar sichtbare Positionierungsentscheidung ist vor Kampfbeginn noch möglich.
                 - In VOR_MATCH nur Navigationsaktionen nennen.
                 - In UNKLAR lieber "Nicht sicher erkennbar" statt raten.
+
+                Matchwechsel:
+                - new_match = true NUR wenn der aktuelle Screenshot eindeutig zu einem frisch gestarteten Match gehört und der vorherige Kurzstatus klar aus einem anderen Match stammt.
+                - Typisches starkes Signal: früher Matchbeginn bzw. sehr frühe Stage im aktuellen Bild, während der vorherige Kurzstatus einen deutlich späteren Spielzustand beschreibt.
+                - Wenn new_match = true, ignoriere den vorherigen Kurzstatus vollständig für call, plan und state. Analysiere den neuen Matchzustand frisch.
+                - Bei VOR_MATCH bleibt new_match = false; die App verwirft den alten Matchkontext dort selbst.
+                - Bei Zweifel new_match = false. Niemals allein aufgrund einer kleinen Boardänderung, eines Kampfes oder Karussells ein neues Match annehmen.
 
                 Bildregeln:
                 - Nutze nur Informationen, die im aktuellen Screenshot eindeutig erkennbar sind.
@@ -97,12 +106,13 @@ public final class OpenAIClient {
                 - call = bis zu drei unmittelbar ausführbare Aktionen in einem Satz, maximal 16 deutsche Wörter.
                 - plan = strategischer Kurzplan mit Synergie-/Board-Richtung, Carry/Tank und nächstem Meilenstein, maximal 32 deutsche Wörter.
                 - state = sicher erkannter Match-Kurzstatus für die nächste Analyse, maximal 52 deutsche Wörter.
+                - new_match = true oder false nach den Matchwechsel-Regeln.
                 - Wenn keine konkrete Aktion sicher ableitbar ist: call = "Nicht sicher erkennbar".
                 - Wenn noch kein Match läuft, darf plan kurz den erkannten Vor-Match-Zustand nennen.
                 - Keine Erklärtexte außerhalb des JSON.
 
                 Antworte NUR als kompaktes JSON-Objekt:
-                {"phase":"VOR_MATCH|PLANUNG|SHOP|AUGMENTIERUNG|KARUSSELL|KAMPF|UNKLAR","call":"bis zu drei Aktionen, maximal 16 deutsche Wörter","plan":"maximal 32 deutsche Wörter","state":"maximal 52 deutsche Wörter"}
+                {"phase":"VOR_MATCH|PLANUNG|SHOP|AUGMENTIERUNG|KARUSSELL|KAMPF|UNKLAR","call":"bis zu drei Aktionen, maximal 16 deutsche Wörter","plan":"maximal 32 deutsche Wörter","state":"maximal 52 deutsche Wörter","new_match":false}
                 """;
 
         JSONObject body = new JSONObject();
@@ -145,13 +155,14 @@ public final class OpenAIClient {
             String call = clampWords(parsed.optString("call", "Nicht sicher erkennbar"), 16);
             String plan = clampWords(parsed.optString("plan", ""), 32);
             String state = clampWords(parsed.optString("state", ""), 52);
+            boolean newMatch = parsed.optBoolean("new_match", false);
             if (call.trim().isEmpty()) call = "Nicht sicher erkennbar";
             if ("KAMPF".equals(phase) && ("Nicht sicher erkennbar".equals(call) || call.trim().isEmpty())) {
                 call = "Warte auf Planungsphase";
             }
-            return new CoachResult(phase, call, plan, state);
+            return new CoachResult(phase, call, plan, state, newMatch);
         } catch (Exception ignored) {
-            return new CoachResult("UNKLAR", clampWords(text, 16), "", "");
+            return new CoachResult("UNKLAR", clampWords(text, 16), "", "", false);
         }
     }
 

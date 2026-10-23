@@ -151,14 +151,27 @@ public class ScreenCaptureService extends Service {
         aiExecutor.execute(() -> {
             try {
                 OpenAIClient.CoachResult result = OpenAIClient.coach(apiKey, model, frame, previousState);
-                StringBuilder memory = new StringBuilder();
-                if (result.state != null && !result.state.trim().isEmpty()) memory.append(result.state.trim());
-                if (result.plan != null && !result.plan.trim().isEmpty()) {
-                    if (memory.length() > 0) memory.append(" | ");
-                    memory.append("Letzter Plan: ").append(result.plan.trim());
+
+                boolean hadMatchMemory = previousState != null && !previousState.trim().isEmpty();
+                boolean resetByPreMatch = "VOR_MATCH".equals(result.phase);
+                boolean resetByNewMatch = result.newMatch;
+                boolean showResetNotice = resetByNewMatch || (resetByPreMatch && hadMatchMemory);
+
+                if (resetByPreMatch || resetByNewMatch) {
+                    previousState = "";
                 }
-                if (memory.length() > 0) previousState = memory.toString();
-                publishCall(result.phase, result.call, result.plan);
+
+                if (!resetByPreMatch) {
+                    StringBuilder memory = new StringBuilder();
+                    if (result.state != null && !result.state.trim().isEmpty()) memory.append(result.state.trim());
+                    if (result.plan != null && !result.plan.trim().isEmpty()) {
+                        if (memory.length() > 0) memory.append(" | ");
+                        memory.append("Letzter Plan: ").append(result.plan.trim());
+                    }
+                    if (memory.length() > 0) previousState = memory.toString();
+                }
+
+                publishCall(result.phase, result.call, result.plan, showResetNotice);
             } catch (Exception e) {
                 String msg = e.getMessage() == null ? "Analysefehler" : e.getMessage();
                 if (msg.length() > 95) msg = msg.substring(0, 95) + "…";
@@ -169,11 +182,14 @@ public class ScreenCaptureService extends Service {
         });
     }
 
-    private void publishCall(String phase, String call, String plan) {
+    private void publishCall(String phase, String call, String plan, boolean showResetNotice) {
         mainHandler.post(() -> {
             String display = "[" + phase + "] " + call;
             if (plan != null && !plan.trim().isEmpty()) {
                 display = display + "\nPLAN: " + plan;
+            }
+            if (showResetNotice) {
+                display = display + "\nMATCH: neuer Kontext";
             }
             setCoachText(display);
             if (tts != null) tts.speak(call, TextToSpeech.QUEUE_FLUSH, null, "tft-call");
