@@ -69,7 +69,7 @@ public final class OpenAIClient {
         JSONObject body = new JSONObject();
         body.put("model", model == null || model.trim().isEmpty() ? "gpt-6-luna" : model);
         body.put("store", false);
-        body.put("max_output_tokens", 120);
+        body.put("max_output_tokens", 600);
 
         JSONArray content = new JSONArray();
         content.put(new JSONObject().put("type", "input_text").put("text",
@@ -113,6 +113,10 @@ public final class OpenAIClient {
 
     private static String extractOutputText(String raw) throws Exception {
         JSONObject response = new JSONObject(raw);
+
+        String direct = response.optString("output_text", "").trim();
+        if (!direct.isEmpty()) return direct;
+
         JSONArray output = response.optJSONArray("output");
         if (output == null) return "";
         for (int i = 0; i < output.length(); i++) {
@@ -127,6 +131,15 @@ public final class OpenAIClient {
                     if (!text.isEmpty()) return text;
                 }
             }
+        }
+        String status = response.optString("status", "");
+        if ("incomplete".equals(status)) {
+            JSONObject details = response.optJSONObject("incomplete_details");
+            String reason = details == null ? "" : details.optString("reason", "");
+            if ("max_output_tokens".equals(reason)) {
+                throw new Exception("Antwortlimit erreicht – bitte erneut MERKEN");
+            }
+            throw new Exception("API-Antwort unvollständig" + (reason.isEmpty() ? "" : ": " + reason));
         }
         return "";
     }
