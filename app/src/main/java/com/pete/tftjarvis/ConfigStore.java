@@ -19,14 +19,12 @@ public final class ConfigStore {
     private static final String KEY_ALIAS = "tft_jarvis_api_key";
     private static final String P_API = "api";
     private static final String P_MODEL = "model";
-    private static final String P_INTERVAL = "interval";
 
     private ConfigStore() {}
 
-    public static void save(Context context, String apiKey, String model, int intervalSeconds) {
+    public static void save(Context context, String apiKey, String model) {
         SharedPreferences.Editor e = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
         e.putString(P_MODEL, model);
-        e.putInt(P_INTERVAL, intervalSeconds);
         if (apiKey != null && !apiKey.trim().isEmpty()) {
             try {
                 e.putString(P_API, encrypt(apiKey));
@@ -53,9 +51,6 @@ public final class ConfigStore {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(P_MODEL, "gpt-6-luna");
     }
 
-    public static int loadInterval(Context context) {
-        return Math.max(4, context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(P_INTERVAL, 7));
-    }
 
     private static SecretKey getKey() throws Exception {
         KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
