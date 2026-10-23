@@ -9,8 +9,12 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.Spinner;
 import android.widget.TextView;
 
 public class MainActivity extends Activity {
@@ -20,7 +24,9 @@ public class MainActivity extends Activity {
     private TextView statusText;
     private EditText apiKeyInput;
     private EditText modelInput;
+    private Spinner providerInput;
     private boolean startAfterOverlayPermission;
+    private boolean providerUiReady;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -30,22 +36,60 @@ public class MainActivity extends Activity {
         statusText = findViewById(R.id.statusText);
         apiKeyInput = findViewById(R.id.apiKeyInput);
         modelInput = findViewById(R.id.modelInput);
+        providerInput = findViewById(R.id.providerInput);
+
         Button startButton = findViewById(R.id.startButton);
         Button rememberButton = findViewById(R.id.rememberButton);
         Button stopButton = findViewById(R.id.stopButton);
         Button forgetKeyButton = findViewById(R.id.forgetKeyButton);
 
-        String savedKey = ConfigStore.loadApiKey(this);
-        if (!savedKey.trim().isEmpty()) apiKeyInput.setText(savedKey);
-        modelInput.setText(ConfigStore.loadModel(this));
-        modelInput.setEnabled(false);
-        modelInput.setFocusable(false);
+        ArrayAdapter<String> providerAdapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_spinner_item,
+                new String[]{"Gemini Free", "OpenAI optional"}
+        );
+        providerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        providerInput.setAdapter(providerAdapter);
 
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+        String savedProvider = ConfigStore.loadProvider(this);
+        providerInput.setSelection(
+                ConfigStore.PROVIDER_OPENAI.equals(savedProvider) ? 1 : 0,
+                false
+        );
+        loadProviderFields(savedProvider);
+        providerUiReady = true;
+
+        providerInput.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(
+                    AdapterView<?> parent,
+                    View view,
+                    int position,
+                    long id
+            ) {
+                if (!providerUiReady) return;
+                String provider = position == 1
+                        ? ConfigStore.PROVIDER_OPENAI
+                        : ConfigStore.PROVIDER_GEMINI;
+                ConfigStore.saveProvider(MainActivity.this, provider);
+                loadProviderFields(provider);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
+
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    REQ_NOTIFICATIONS
+            );
         }
 
         startButton.setOnClickListener(v -> startCoachingFlow());
+
         rememberButton.setOnClickListener(v -> {
             if (!ScreenCaptureService.isRunning()) {
                 status("Coaching zuerst starten");
@@ -54,35 +98,89 @@ public class MainActivity extends Activity {
                 status("Analyse ausgelöst");
             }
         });
+
         stopButton.setOnClickListener(v -> {
             stopService(new Intent(this, ScreenCaptureService.class));
             status("Coaching gestoppt");
         });
+
         forgetKeyButton.setOnClickListener(v -> {
+            String provider = selectedProvider();
             apiKeyInput.setText("");
-            ConfigStore.save(this, "", modelInput.getText().toString().trim());
-            status("Eingabefeld geleert");
+            if (ConfigStore.PROVIDER_GEMINI.equals(provider)) {
+                ConfigStore.saveGemini(
+                        this,
+                        "",
+                        modelInput.getText().toString().trim()
+                );
+            } else {
+                ConfigStore.save(
+                        this,
+                        "",
+                        modelInput.getText().toString().trim()
+                );
+            }
+            status("API-Key gelöscht");
         });
     }
 
+    private void loadProviderFields(String provider) {
+        if (ConfigStore.PROVIDER_OPENAI.equals(provider)) {
+            apiKeyInput.setHint("OpenAI API-Key");
+            apiKeyInput.setText(ConfigStore.loadApiKey(this));
+            modelInput.setHint("OpenAI Modell");
+            modelInput.setText(ConfigStore.loadModel(this));
+        } else {
+            apiKeyInput.setHint("Gemini API-Key");
+            apiKeyInput.setText(ConfigStore.loadGeminiApiKey(this));
+            modelInput.setHint("Gemini Modell");
+            modelInput.setText(ConfigStore.loadGeminiModel(this));
+        }
+    }
+
+    private String selectedProvider() {
+        return providerInput.getSelectedItemPosition() == 1
+                ? ConfigStore.PROVIDER_OPENAI
+                : ConfigStore.PROVIDER_GEMINI;
+    }
+
     private void startCoachingFlow() {
+        String provider = selectedProvider();
         String apiKey = apiKeyInput.getText().toString().trim();
+
         if (apiKey.isEmpty()) {
-            status("Gemini API-Key fehlt");
+            status(ConfigStore.PROVIDER_GEMINI.equals(provider)
+                    ? "Gemini API-Key fehlt"
+                    : "OpenAI API-Key fehlt");
             return;
         }
+
         String model = modelInput.getText().toString().trim();
-        if (model.isEmpty()) model = GeminiClient.DEFAULT_MODEL;
-        ConfigStore.save(this, apiKey, model);
+        if (model.isEmpty()) {
+            model = ConfigStore.PROVIDER_GEMINI.equals(provider)
+                    ? GeminiClient.DEFAULT_MODEL
+                    : "gpt-6-luna";
+            modelInput.setText(model);
+        }
+
+        ConfigStore.saveProvider(this, provider);
+        if (ConfigStore.PROVIDER_GEMINI.equals(provider)) {
+            ConfigStore.saveGemini(this, apiKey, model);
+        } else {
+            ConfigStore.save(this, apiKey, model);
+        }
 
         if (!Settings.canDrawOverlays(this)) {
             startAfterOverlayPermission = true;
             status("Bitte Overlay erlauben");
-            Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:" + getPackageName()));
+            Intent i = new Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName())
+            );
             startActivity(i);
             return;
         }
+
         requestScreenCapture();
     }
 
@@ -95,9 +193,9 @@ public class MainActivity extends Activity {
         }
     }
 
-
     private void requestScreenCapture() {
-        MediaProjectionManager mgr = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
+        MediaProjectionManager mgr =
+                (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
         status("Bildschirmfreigabe bestätigen");
         startActivityForResult(mgr.createScreenCaptureIntent(), REQ_CAPTURE);
     }
@@ -106,14 +204,29 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != REQ_CAPTURE) return;
+
         if (resultCode == RESULT_OK && data != null) {
+            String provider = selectedProvider();
+
             Intent service = new Intent(this, ScreenCaptureService.class);
             service.putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode);
             service.putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data);
-            service.putExtra(ScreenCaptureService.EXTRA_API_KEY, apiKeyInput.getText().toString().trim());
-            service.putExtra(ScreenCaptureService.EXTRA_MODEL, modelInput.getText().toString().trim());
+            service.putExtra(ScreenCaptureService.EXTRA_PROVIDER, provider);
+            service.putExtra(
+                    ScreenCaptureService.EXTRA_API_KEY,
+                    apiKeyInput.getText().toString().trim()
+            );
+            service.putExtra(
+                    ScreenCaptureService.EXTRA_MODEL,
+                    modelInput.getText().toString().trim()
+            );
+
             startForegroundService(service);
-            status("Aktiv – Gemini Free + Smart-Auto; ANALYSE bleibt verfügbar");
+            status(
+                    ConfigStore.PROVIDER_GEMINI.equals(provider)
+                            ? "Aktiv – Gemini + Smart-Auto"
+                            : "Aktiv – OpenAI + Smart-Auto"
+            );
         } else {
             status("Bildschirmfreigabe nicht erteilt");
         }
