@@ -20,7 +20,6 @@ public class MainActivity extends Activity {
     private TextView statusText;
     private EditText apiKeyInput;
     private EditText modelInput;
-    private EditText intervalInput;
     private boolean startAfterOverlayPermission;
 
     @Override
@@ -31,7 +30,6 @@ public class MainActivity extends Activity {
         statusText = findViewById(R.id.statusText);
         apiKeyInput = findViewById(R.id.apiKeyInput);
         modelInput = findViewById(R.id.modelInput);
-        intervalInput = findViewById(R.id.intervalInput);
         Button startButton = findViewById(R.id.startButton);
         Button rememberButton = findViewById(R.id.rememberButton);
         Button stopButton = findViewById(R.id.stopButton);
@@ -40,7 +38,6 @@ public class MainActivity extends Activity {
         String savedKey = ConfigStore.loadApiKey(this);
         if (!savedKey.trim().isEmpty()) apiKeyInput.setText(savedKey);
         modelInput.setText(ConfigStore.loadModel(this));
-        intervalInput.setText(String.valueOf(ConfigStore.loadInterval(this)));
 
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
@@ -61,7 +58,7 @@ public class MainActivity extends Activity {
         });
         forgetKeyButton.setOnClickListener(v -> {
             apiKeyInput.setText("");
-            ConfigStore.save(this, "", modelInput.getText().toString().trim(), readInterval());
+            ConfigStore.save(this, "", modelInput.getText().toString().trim());
             status("Eingabefeld geleert");
         });
     }
@@ -74,7 +71,7 @@ public class MainActivity extends Activity {
         }
         String model = modelInput.getText().toString().trim();
         if (model.isEmpty()) model = "gpt-6-luna";
-        ConfigStore.save(this, apiKey, model, readInterval());
+        ConfigStore.save(this, apiKey, model);
 
         if (!Settings.canDrawOverlays(this)) {
             startAfterOverlayPermission = true;
@@ -96,13 +93,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    private int readInterval() {
-        try {
-            return Math.max(4, Integer.parseInt(intervalInput.getText().toString().trim()));
-        } catch (Exception ignored) {
-            return 7;
-        }
-    }
 
     private void requestScreenCapture() {
         MediaProjectionManager mgr = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
@@ -120,7 +110,6 @@ public class MainActivity extends Activity {
             service.putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data);
             service.putExtra(ScreenCaptureService.EXTRA_API_KEY, apiKeyInput.getText().toString().trim());
             service.putExtra(ScreenCaptureService.EXTRA_MODEL, modelInput.getText().toString().trim());
-            service.putExtra(ScreenCaptureService.EXTRA_INTERVAL_SECONDS, readInterval());
             startForegroundService(service);
             status("Aktiv – TFT öffnen, MERKEN drücken");
         } else {
