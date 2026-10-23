@@ -67,23 +67,26 @@ final class EvidenceLedger {
         }
     }
 
-    synchronized void recordCloud(OpenAIClient.CoachResult result) {
+    synchronized void recordCloud(OpenAIClient.CoachResult result, long frameObservedAt) {
         if (result == null) return;
         long now = System.currentTimeMillis();
+        // A model response can arrive many seconds after the screenshot was taken.
+        // Both modalities must be dated to the SAME frame, not the network response.
+        long at = frameObservedAt > 0L && frameObservedAt <= now ? frameObservedAt : now;
         String conf = normalizeConfidence(result.confidence);
 
-        putCloud("phase", result.phase, conf, now);
-        if (result.stage != null && !result.stage.trim().isEmpty()) putCloud("stage", result.stage, conf, now);
-        if (result.level >= 0) putCloud("level", String.valueOf(result.level), conf, now);
-        if (result.gold >= 0) putCloud("gold", String.valueOf(result.gold), conf, now);
-        if (result.health >= 0) putCloud("health", String.valueOf(result.health), conf, now);
-        putCloudList("board", result.board, conf, now);
-        putCloudList("bench", result.bench, conf, now);
-        putCloudList("items", result.items, conf, now);
-        putCloudList("traits", result.traits, conf, now);
-        putCloudList("augments", result.augments, conf, now);
-        putCloudList("shop", result.shop, conf, now);
-        putCloudList("options", result.options, conf, now);
+        putCloud("phase", result.phase, conf, at);
+        if (result.stage != null && !result.stage.trim().isEmpty()) putCloud("stage", result.stage, conf, at);
+        if (result.level >= 0) putCloud("level", String.valueOf(result.level), conf, at);
+        if (result.gold >= 0) putCloud("gold", String.valueOf(result.gold), conf, at);
+        if (result.health >= 0) putCloud("health", String.valueOf(result.health), conf, at);
+        putCloudList("board", result.board, conf, at);
+        putCloudList("bench", result.bench, conf, at);
+        putCloudList("items", result.items, conf, at);
+        putCloudList("traits", result.traits, conf, at);
+        putCloudList("augments", result.augments, conf, at);
+        putCloudList("shop", result.shop, conf, at);
+        putCloudList("options", result.options, conf, at);
     }
 
     synchronized boolean hasFreshConflict() {
@@ -173,20 +176,22 @@ final class EvidenceLedger {
                 return;
             }
 
-            if (fresh && isTrustedLocal(old.source) && source == Source.CLOUD_VISION
-                    && !sameValue(old.value, value)) {
-                conflictTimes.add(System.currentTimeMillis());
-                pruneConflicts(System.currentTimeMillis());
-                return;
+            if (fresh && !sameValue(old.value, value)) {
+                boolean contradictsLocal = isTrustedLocal(old.source)
+                        && source == Source.CLOUD_VISION;
+                boolean contradictsCloud = old.source == Source.CLOUD_VISION
+                        && source == Source.LOCAL_OCR;
+                if (contradictsLocal || contradictsCloud) {
+                    conflictTimes.add(System.currentTimeMillis());
+                    pruneConflicts(System.currentTimeMillis());
+                    // A fresh local reading takes precedence regardless of which
+                    // modality happened to be recorded first.
+                    if (contradictsLocal) return;
+                }
             }
 
-            if (fresh && old.source == Source.VERIFIED_AGREEMENT
-                    && source == Source.CLOUD_VISION
-                    && !sameValue(old.value, value)) {
-                conflictTimes.add(System.currentTimeMillis());
-                pruneConflicts(System.currentTimeMillis());
-                return;
-            }
+            // A delayed observation must not rewind the factual HUD state.
+            if (at < old.observedAt) return;
         }
 
         latest.put(key, new Evidence(key, value, source,
