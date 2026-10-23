@@ -86,7 +86,8 @@ final class SmartFrameDetector {
         long retryDelay = retryAfterFailure
                 ? MIN_CLOUD_INTERVAL_MS * Math.max(1, consecutiveFailures)
                 : MIN_CLOUD_INTERVAL_MS;
-        if (now - lastCloudAt < retryDelay) return false;
+        // A fresh detector has no prior cloud call: do not impose a phantom cooldown.
+        if (lastCloudAt > 0L && now - lastCloudAt < retryDelay) return false;
 
         if (lastFailedFingerprint != null) {
             // Cloud failure must not permanently freeze a static scene, but an
