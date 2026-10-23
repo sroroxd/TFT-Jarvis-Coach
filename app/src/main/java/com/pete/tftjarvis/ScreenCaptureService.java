@@ -68,6 +68,7 @@ public class ScreenCaptureService extends Service {
     private volatile long rateLimitedUntil = 0L;
     private volatile long lastAnalyzeTapAt = 0L;
     private volatile boolean smartAutoEnabled = true;
+    private volatile boolean speechMuted = false;
     private volatile boolean currentAnalysisManual = false;
     private volatile String lastPhase = "UNKLAR";
     private volatile boolean matchEndedLock = false;
@@ -153,6 +154,7 @@ public class ScreenCaptureService extends Service {
         }
 
         smartAutoEnabled = ConfigStore.loadSmartAuto(this);
+        speechMuted = ConfigStore.loadSpeechMuted(this);
 
         createOverlayIfAllowed();
 
@@ -481,7 +483,7 @@ public class ScreenCaptureService extends Service {
 
     private boolean shouldSpeak(String phase, String call, String priority,
                                 String confidence, boolean manualRequest) {
-        if (call == null || call.trim().isEmpty()) return false;
+        if (speechMuted || call == null || call.trim().isEmpty()) return false;
         String normalizedCall = call.toLowerCase(Locale.GERMAN)
                 .replaceAll("[^a-z0-9äöüß ]", " ")
                 .replaceAll("\\s+", " ")
@@ -796,7 +798,9 @@ public class ScreenCaptureService extends Service {
         menu.getMenu().add(smartAutoEnabled
                 ? "Intelligente Automatik ausschalten"
                 : "Intelligente Automatik einschalten");
-        menu.getMenu().add("Gedächtnis zurücksetzen");
+        menu.getMenu().add(speechMuted ? "Sprache einschalten" : "Stumm schalten");
+        menu.getMenu().add("Status anzeigen");
+        menu.getMenu().add("Neue Partie / Gedächtnis zurücksetzen");
         menu.setOnMenuItemClickListener(item -> {
             String title = item.getTitle().toString();
             if (title.startsWith("Intelligente Automatik")) {
@@ -807,7 +811,24 @@ public class ScreenCaptureService extends Service {
                 updateHeaderStatus();
                 return true;
             }
-            if ("Gedächtnis zurücksetzen".equals(title)) {
+            if ("Stumm schalten".equals(title) || "Sprache einschalten".equals(title)) {
+                speechMuted = !speechMuted;
+                ConfigStore.saveSpeechMuted(this, speechMuted);
+                if (speechMuted && tts != null) tts.stop();
+                setCoachText(speechMuted ? "Sprachausgabe stumm" : "Sprachausgabe aktiv");
+                updateHeaderStatus();
+                return true;
+            }
+            if ("Status anzeigen".equals(title)) {
+                String source = ConfigStore.PROVIDER_GEMINI.equals(provider) ? "Gemini" : "OpenAI";
+                setCoachText("Status: " + source + " | Auto: "
+                        + (smartAutoEnabled ? "AN" : "AUS")
+                        + " | Sprache: " + (speechMuted ? "STUMM" : "AN")
+                        + " | Phase: " + lastPhase
+                        + " | " + evidenceLedger.debugSummary());
+                return true;
+            }
+            if ("Neue Partie / Gedächtnis zurücksetzen".equals(title)) {
                 stateGeneration.incrementAndGet();
                 pendingManualRequest.clear();
                 matchState.clear();
@@ -819,7 +840,7 @@ public class ScreenCaptureService extends Service {
                 lastSpokenAt = 0L;
                 smartFrameDetector.reset();
                 if (detailText != null) detailText.setVisibility(View.GONE);
-                setCoachText("Gedächtnis zurückgesetzt");
+                setCoachText("Neue Partie – Gedächtnis zurückgesetzt");
                 return true;
             }
             return false;
@@ -838,7 +859,7 @@ public class ScreenCaptureService extends Service {
                         ? "JARVIS " + source + " ◉"
                         : "JARVIS " + source + " ✓";
             }
-            coachText.setText(status);
+            coachText.setText(speechMuted ? status + " | STUMM" : status);
         }
     }
 
