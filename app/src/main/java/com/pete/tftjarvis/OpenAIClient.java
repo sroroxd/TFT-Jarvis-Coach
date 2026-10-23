@@ -18,13 +18,18 @@ public final class OpenAIClient {
         public final String plan;
         public final String state;
         public final boolean newMatch;
+        public final String priority;
+        public final String confidence;
 
-        CoachResult(String phase, String call, String plan, String state, boolean newMatch) {
+        CoachResult(String phase, String call, String plan, String state, boolean newMatch,
+                    String priority, String confidence) {
             this.phase = phase;
             this.call = call;
             this.plan = plan;
             this.state = state;
             this.newMatch = newMatch;
+            this.priority = priority;
+            this.confidence = confidence;
         }
     }
 
@@ -68,6 +73,15 @@ public final class OpenAIClient {
                 - Karussell: Item priorisieren; Champion nur nennen, wenn sicher erkennbar.
                 - new_match nur true, wenn ein frisch gestartetes Match gegenüber dem vorherigen Kurzstatus eindeutig erkennbar ist; bei Zweifel false.
                 - state enthält nur sicher erkannte, für die nächste Entscheidung relevante Match-Fakten.
+                - priority:
+                  KRITISCH = Entscheidung muss jetzt oder in wenigen Sekunden erfolgen; Verzögerung kann die Runde/Option kosten.
+                  WICHTIG = strategisch relevant für die nächsten Schritte, aber nicht sofort zeitkritisch.
+                  INFO = Navigation, Beobachtung, Kampf-Warten, Unsicherheit oder Hintergrundinformation.
+                - confidence:
+                  HOCH = die für den call nötigen Fakten sind eindeutig sichtbar.
+                  MITTEL = Kernentscheidung plausibel, aber mindestens ein Detail ist nicht eindeutig.
+                  NIEDRIG = für einen konkreten Befehl fehlen entscheidende sichtbare Fakten.
+                - Bei "Nicht sicher erkennbar" immer priority=INFO und confidence=NIEDRIG.
                 - Antworte knapp auf Deutsch und fülle ausschließlich das vorgegebene JSON-Schema.
                 """;
 
@@ -87,12 +101,19 @@ public final class OpenAIClient {
         properties.put("plan", new JSONObject().put("type", "string"));
         properties.put("state", new JSONObject().put("type", "string"));
         properties.put("new_match", new JSONObject().put("type", "boolean"));
+        properties.put("priority", new JSONObject()
+                .put("type", "string")
+                .put("enum", new JSONArray().put("KRITISCH").put("WICHTIG").put("INFO")));
+        properties.put("confidence", new JSONObject()
+                .put("type", "string")
+                .put("enum", new JSONArray().put("HOCH").put("MITTEL").put("NIEDRIG")));
 
         JSONObject schema = new JSONObject()
                 .put("type", "object")
                 .put("properties", properties)
                 .put("required", new JSONArray()
-                        .put("phase").put("call").put("plan").put("state").put("new_match"))
+                        .put("phase").put("call").put("plan").put("state").put("new_match")
+                        .put("priority").put("confidence"))
                 .put("additionalProperties", false);
 
         body.put("text", new JSONObject().put("format", new JSONObject()
@@ -141,13 +162,20 @@ public final class OpenAIClient {
             String plan = clampWords(parsed.optString("plan", ""), 32);
             String state = clampWords(parsed.optString("state", ""), 52);
             boolean newMatch = parsed.optBoolean("new_match", false);
+            String priority = normalizePriority(parsed.optString("priority", "INFO"));
+            String confidence = normalizeConfidence(parsed.optString("confidence", "NIEDRIG"));
             if (call.trim().isEmpty()) call = "Nicht sicher erkennbar";
+            if ("Nicht sicher erkennbar".equalsIgnoreCase(call.trim())) {
+                priority = "INFO";
+                confidence = "NIEDRIG";
+            }
             if ("KAMPF".equals(phase) && ("Nicht sicher erkennbar".equals(call) || call.trim().isEmpty())) {
                 call = "Warte auf Planungsphase";
+                priority = "INFO";
             }
-            return new CoachResult(phase, call, plan, state, newMatch);
+            return new CoachResult(phase, call, plan, state, newMatch, priority, confidence);
         } catch (Exception ignored) {
-            return new CoachResult("UNKLAR", clampWords(text, 16), "", "", false);
+            return new CoachResult("UNKLAR", clampWords(text, 16), "", "", false, "INFO", "NIEDRIG");
         }
     }
 
@@ -210,6 +238,20 @@ public final class OpenAIClient {
             default:
                 return "UNKLAR";
         }
+    }
+
+    private static String normalizePriority(String value) {
+        if (value == null) return "INFO";
+        String v = value.trim().toUpperCase();
+        if ("KRITISCH".equals(v) || "WICHTIG".equals(v) || "INFO".equals(v)) return v;
+        return "INFO";
+    }
+
+    private static String normalizeConfidence(String value) {
+        if (value == null) return "NIEDRIG";
+        String v = value.trim().toUpperCase();
+        if ("HOCH".equals(v) || "MITTEL".equals(v) || "NIEDRIG".equals(v)) return v;
+        return "NIEDRIG";
     }
 
     private static boolean isRetryableRateLimit(String raw) {
