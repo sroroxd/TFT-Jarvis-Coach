@@ -14,6 +14,15 @@ android {
         versionName '0.8.3-reliability-beta1'
     }
 
+    // Debug builds install alongside the existing Jarvis app without replacing
+    // its signing certificate, preferences, or API-key configuration.
+    buildTypes {
+        debug {
+            applicationIdSuffix '.beta'
+            versionNameSuffix '-debug'
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
