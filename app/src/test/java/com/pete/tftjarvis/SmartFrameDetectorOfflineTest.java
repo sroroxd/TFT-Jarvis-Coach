@@ -84,7 +84,8 @@ public class SmartFrameDetectorOfflineTest {
         // Changing the game screen clears the failed-frame retry circuit breaker.
         assertFalse(detector.observeFingerprint(frame(170), 37600L, "VOR_MATCH"));
         assertFalse(detector.observeFingerprint(frame(170), 38200L, "VOR_MATCH"));
-        assertTrue(detector.observeFingerprint(frame(170), 38800L, "VOR_MATCH"));
+        assertFalse(detector.observeFingerprint(frame(170), 38800L, "VOR_MATCH"));
+        assertTrue(detector.observeFingerprint(frame(170), 39400L, "VOR_MATCH"));
     }
 
     @Test public void successfulRetryResetsErrorBackoff() {
