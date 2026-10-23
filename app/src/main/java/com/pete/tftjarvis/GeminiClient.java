@@ -142,6 +142,7 @@ public final class GeminiClient {
 
         URL url = new URL("https://generativelanguage.googleapis.com/v1/interactions");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        try {
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
         conn.setReadTimeout(readTimeoutMs);
@@ -205,8 +206,6 @@ public final class GeminiClient {
         InputStream stream = code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream();
         String raw = readAll(stream);
         int retryAfter = parseRetryAfterSeconds(retryAfterHeader, raw);
-        conn.disconnect();
-
         if (code < 200 || code >= 300) {
             String message = compactApiError(code, raw);
             boolean retryable = code == 429 || code == 500 || code == 502 || code == 503 || code == 504;
@@ -220,6 +219,9 @@ public final class GeminiClient {
             return parseCoachJson(text);
         } catch (Exception malformed) {
             throw new MalformedResponseException();
+        }
+        } finally {
+            conn.disconnect();
         }
     }
 
