@@ -113,15 +113,20 @@ public final class GeminiClient {
         body.put("model", model);
         body.put("store", false);
 
-        JSONArray input = new JSONArray();
-        input.put(new JSONObject()
+        JSONArray content = new JSONArray();
+        content.put(new JSONObject()
                 .put("type", "text")
                 .put("text", buildPrompt(previousState)));
-        input.put(new JSONObject()
+        content.put(new JSONObject()
                 .put("type", "image")
                 .put("mime_type", "image/jpeg")
                 .put("resolution", "medium")
                 .put("data", base64Jpeg));
+
+        JSONArray input = new JSONArray();
+        input.put(new JSONObject()
+                .put("type", "user_input")
+                .put("content", content));
         body.put("input", input);
 
         body.put("response_format", new JSONObject()
