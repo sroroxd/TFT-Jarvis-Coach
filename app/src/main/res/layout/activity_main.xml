@@ -22,7 +22,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:text="Set 18 · Patch 18.5 · Gemini Free · Smart-Auto · Overlay + Sprache"
+            android:text="Set 18 · Patch 18.5 · Smart-Auto · lokale Ereigniserkennung · Cloud nur bei relevanten Entscheidungen"
             android:textColor="#B9B9B9"
             android:textSize="14sp" />
 
@@ -37,13 +37,28 @@
             android:textColor="@color/white"
             android:textSize="16sp" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="KI-Anbieter"
+            android:textColor="#B9B9B9"
+            android:textSize="13sp" />
+
+        <Spinner
+            android:id="@+id/providerInput"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:spinnerMode="dropdown" />
+
         <EditText
             android:id="@+id/apiKeyInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:hint="Gemini API-Key (Google AI Studio)"
+            android:layout_marginTop="8dp"
+            android:hint="Gemini API-Key"
             android:inputType="textPassword"
+            android:singleLine="true"
             android:textColor="@color/white"
             android:textColorHint="#888888" />
 
@@ -51,12 +66,19 @@
             android:id="@+id/modelInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Modell"
+            android:hint="Gemini Modell"
             android:singleLine="true"
             android:text="gemini-3.8-flash"
             android:textColor="@color/white"
             android:textColorHint="#888888" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Empfohlen: Gemini Free. OpenAI bleibt optional, wird aber nicht automatisch als kostenpflichtiger Fallback verwendet."
+            android:textColor="#8F8F8F"
+            android:textSize="12sp" />
 
         <Button
             android:id="@+id/startButton"
@@ -84,13 +106,13 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="API-KEY FELD LEEREN" />
+            android:text="AKTUELLEN API-KEY LÖSCHEN" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="Run-Profil: Set 18 · Patch 18.5. Standard: Gemini 3.8 Flash im kostenlosen Tier, automatischer einmaliger Fallback auf Gemini 3.5 Flash-Lite. Smart-Auto erkennt relevante Bildschirmwechsel lokal; ANALYSE bleibt manuell verfügbar. Keine automatischen Klicks im Spiel."
+            android:text="Smart-Auto beobachtet Bildschirmänderungen lokal und sendet nur bei relevanten, stabilen Zustandswechseln ein Bild an die gewählte KI. ANALYSE bleibt als manueller Override verfügbar. Über ⋮ im Overlay kannst du Smart-Auto abschalten oder das Match-Gedächtnis zurücksetzen."
             android:textColor="#B0B0B0"
             android:textSize="14sp" />
 
