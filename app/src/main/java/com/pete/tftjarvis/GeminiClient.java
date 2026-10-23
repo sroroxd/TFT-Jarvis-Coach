@@ -11,6 +11,8 @@ import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class GeminiClient {
     public static final String DEFAULT_MODEL = "gemini-3.8-flash";
@@ -137,7 +139,7 @@ public final class GeminiClient {
         String thinking = FALLBACK_MODEL.equals(model) ? "minimal" : "low";
         body.put("generation_config", new JSONObject()
                 .put("thinking_level", thinking)
-                .put("max_output_tokens", 224));
+                .put("max_output_tokens", 320));
 
         byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
         try (OutputStream os = conn.getOutputStream()) {
@@ -196,6 +198,11 @@ public final class GeminiClient {
                 - state: höchstens 52 deutsche Wörter und nur sichere, für die nächste Entscheidung relevante Fakten.
                 - Karussell: Item priorisieren; Champion nur nennen, wenn sicher erkennbar.
                 - new_match nur true, wenn ein frisch gestartetes Match gegenüber dem vorherigen Status eindeutig erkennbar ist; bei Zweifel false.
+                - Strukturierte Beobachtungen:
+                  level, gold, health: nur wenn sicher sichtbar, sonst -1.
+                  board, bench, items, augments, traits: nur sicher erkannte Namen; unbekannt = [].
+                  carry und tank: nur wenn sicher ableitbar, sonst leerer String.
+                  Diese Felder beschreiben ausschließlich den AKTUELLEN Screenshot, nicht geratenen alten Kontext.
                 - priority:
                   KRITISCH = Entscheidung muss jetzt oder in wenigen Sekunden erfolgen.
                   WICHTIG = strategisch relevant, aber nicht sofort zeitkritisch.
@@ -227,13 +234,29 @@ public final class GeminiClient {
         properties.put("confidence", new JSONObject()
                 .put("type", "string")
                 .put("enum", new JSONArray().put("HOCH").put("MITTEL").put("NIEDRIG")));
+        properties.put("level", new JSONObject().put("type", "integer"));
+        properties.put("gold", new JSONObject().put("type", "integer"));
+        properties.put("health", new JSONObject().put("type", "integer"));
+        JSONObject stringArray = new JSONObject()
+                .put("type", "array")
+                .put("items", new JSONObject().put("type", "string"));
+        properties.put("board", stringArray);
+        properties.put("bench", new JSONObject(stringArray.toString()));
+        properties.put("items", new JSONObject(stringArray.toString()));
+        properties.put("augments", new JSONObject(stringArray.toString()));
+        properties.put("traits", new JSONObject(stringArray.toString()));
+        properties.put("carry", new JSONObject().put("type", "string"));
+        properties.put("tank", new JSONObject().put("type", "string"));
 
         return new JSONObject()
                 .put("type", "object")
                 .put("properties", properties)
                 .put("required", new JSONArray()
                         .put("phase").put("call").put("plan").put("state")
-                        .put("new_match").put("priority").put("confidence"))
+                        .put("new_match").put("priority").put("confidence")
+                        .put("level").put("gold").put("health")
+                        .put("board").put("bench").put("items").put("augments").put("traits")
+                        .put("carry").put("tank"))
                 .put("additionalProperties", false);
     }
 
@@ -246,6 +269,16 @@ public final class GeminiClient {
         boolean newMatch = parsed.optBoolean("new_match", false);
         String priority = normalizePriority(parsed.optString("priority", "INFO"));
         String confidence = normalizeConfidence(parsed.optString("confidence", "NIEDRIG"));
+        int level = parsed.optInt("level", -1);
+        int gold = parsed.optInt("gold", -1);
+        int health = parsed.optInt("health", -1);
+        List<String> board = jsonStringList(parsed.optJSONArray("board"));
+        List<String> bench = jsonStringList(parsed.optJSONArray("bench"));
+        List<String> items = jsonStringList(parsed.optJSONArray("items"));
+        List<String> augments = jsonStringList(parsed.optJSONArray("augments"));
+        List<String> traits = jsonStringList(parsed.optJSONArray("traits"));
+        String carry = parsed.optString("carry", "").trim();
+        String tank = parsed.optString("tank", "").trim();
 
         if (call.trim().isEmpty()) call = "Nicht sicher erkennbar";
         if ("Nicht sicher erkennbar".equalsIgnoreCase(call.trim())) {
@@ -259,7 +292,18 @@ public final class GeminiClient {
         }
 
         return new OpenAIClient.CoachResult(
-                phase, call, plan, state, newMatch, priority, confidence);
+                phase, call, plan, state, newMatch, priority, confidence,
+                level, gold, health, board, bench, items, augments, traits, carry, tank);
+    }
+
+    private static List<String> jsonStringList(JSONArray array) {
+        List<String> out = new ArrayList<>();
+        if (array == null) return out;
+        for (int i = 0; i < array.length() && out.size() < 12; i++) {
+            String value = array.optString(i, "").trim();
+            if (!value.isEmpty()) out.add(value);
+        }
+        return out;
     }
 
     private static String extractOutputText(String raw) throws Exception {
