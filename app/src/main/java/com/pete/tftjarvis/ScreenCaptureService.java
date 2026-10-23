@@ -210,7 +210,13 @@ public class ScreenCaptureService extends Service {
         }
         if (manual && !queued && now - lastAnalyzeTapAt < 1000L) return;
         if (!analyzing.compareAndSet(false, true)) {
-            if (manual) pendingManualRequest.enqueue();
+            if (manual) {
+                pendingManualRequest.enqueue();
+            } else {
+                // A pending manual analysis can overtake Smart-Auto's posted
+                // trigger. Keep any failed-frame retry eligible afterward.
+                smartFrameDetector.deferRetryUntil(now + 2_000L);
+            }
             return;
         }
         if (manual && !queued) lastAnalyzeTapAt = now;
