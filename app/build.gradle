@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 18
-        versionName '0.7.0-gemini-free'
+        versionCode 19
+        versionName '0.7.1-gemini-timeout-fix'
     }
 
     compileOptions {
