@@ -88,8 +88,8 @@ jobs:
           "$APKSIGNER" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/apk-verification.txt"
           # Fingerprints are public certificate identifiers, not the signing key.
           # Parse the exact signer digest from apksigner; never mask a real mismatch.
-          echo "Certificate diagnostics (public SHA-256 only):"
-          grep -E 'Signer #1 certificate SHA-256 digest:' "$RUNNER_TEMP/apk-verification.txt" || true
+          echo "Certificate diagnostics (public signing metadata only):"
+          cat "$RUNNER_TEMP/apk-verification.txt"
           ACTUAL=$(sed -n 's/^[[:space:]]*Signer #1 certificate SHA-256 digest:[[:space:]]*//p' "$RUNNER_TEMP/apk-verification.txt" | head -n 1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           EXPECTED=$(tr -d ':[:space:]' < .github/signing/cert-sha256.txt | tr '[:upper:]' '[:lower:]')
           echo "Stored certificate SHA-256: $EXPECTED"
