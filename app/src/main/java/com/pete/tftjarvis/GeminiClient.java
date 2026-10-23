@@ -8,12 +8,17 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 public final class GeminiClient {
     public static final String DEFAULT_MODEL = "gemini-3.8-flash";
     public static final String FALLBACK_MODEL = "gemini-3.5-flash-lite";
+
+    private static final int CONNECT_TIMEOUT_MS = 8000;
+    private static final int PRIMARY_READ_TIMEOUT_MS = 16000;
+    private static final int FALLBACK_READ_TIMEOUT_MS = 18000;
 
     public static final class RateLimitException extends Exception {
         public final int retryAfterSeconds;
@@ -46,17 +51,32 @@ public final class GeminiClient {
             String previousState
     ) throws Exception {
         String primary = normalizeModel(requestedModel);
+
         try {
-            return call(primary, apiKey, base64Jpeg, previousState);
+            return call(primary, apiKey, base64Jpeg, previousState,
+                    FALLBACK_MODEL.equals(primary) ? FALLBACK_READ_TIMEOUT_MS : PRIMARY_READ_TIMEOUT_MS);
+        } catch (SocketTimeoutException timeout) {
+            if (FALLBACK_MODEL.equals(primary)) {
+                throw new Exception("Gemini antwortet gerade zu langsam – erneut versuchen");
+            }
+            try {
+                return call(FALLBACK_MODEL, apiKey, base64Jpeg, previousState, FALLBACK_READ_TIMEOUT_MS);
+            } catch (SocketTimeoutException secondTimeout) {
+                throw new Exception("Gemini antwortet gerade zu langsam – erneut versuchen");
+            } catch (ApiException second) {
+                if (second.httpCode == 429) throw new RateLimitException(second.retryAfterSeconds);
+                throw second;
+            }
         } catch (ApiException first) {
             if (!first.retryable || FALLBACK_MODEL.equals(primary)) {
                 if (first.httpCode == 429) throw new RateLimitException(first.retryAfterSeconds);
                 throw first;
             }
 
-            // One controlled free-tier fallback only. Never loop between models.
             try {
-                return call(FALLBACK_MODEL, apiKey, base64Jpeg, previousState);
+                return call(FALLBACK_MODEL, apiKey, base64Jpeg, previousState, FALLBACK_READ_TIMEOUT_MS);
+            } catch (SocketTimeoutException timeout) {
+                throw new Exception("Gemini antwortet gerade zu langsam – erneut versuchen");
             } catch (ApiException second) {
                 if (second.httpCode == 429) {
                     throw new RateLimitException(Math.max(first.retryAfterSeconds, second.retryAfterSeconds));
@@ -77,13 +97,14 @@ public final class GeminiClient {
             String model,
             String apiKey,
             String base64Jpeg,
-            String previousState
+            String previousState,
+            int readTimeoutMs
     ) throws Exception {
-        URL url = new URL("https://generativelanguage.googleapis.com/v1beta/interactions");
+        URL url = new URL("https://generativelanguage.googleapis.com/v1/interactions");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
-        conn.setConnectTimeout(12000);
-        conn.setReadTimeout(40000);
+        conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        conn.setReadTimeout(readTimeoutMs);
         conn.setDoOutput(true);
         conn.setRequestProperty("x-goog-api-key", apiKey);
         conn.setRequestProperty("Content-Type", "application/json");
@@ -99,6 +120,7 @@ public final class GeminiClient {
         input.put(new JSONObject()
                 .put("type", "image")
                 .put("mime_type", "image/jpeg")
+                .put("resolution", "medium")
                 .put("data", base64Jpeg));
         body.put("input", input);
 
@@ -110,7 +132,7 @@ public final class GeminiClient {
         String thinking = FALLBACK_MODEL.equals(model) ? "minimal" : "low";
         body.put("generation_config", new JSONObject()
                 .put("thinking_level", thinking)
-                .put("max_output_tokens", 256));
+                .put("max_output_tokens", 224));
 
         byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
         try (OutputStream os = conn.getOutputStream()) {
