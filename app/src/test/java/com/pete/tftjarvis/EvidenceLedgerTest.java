@@ -81,6 +81,24 @@ public class EvidenceLedgerTest {
         assertTrue(ledger.toPromptContext().contains("gold=30"));
     }
 
+    @Test public void matchingValuesFromDifferentScreenshotsAreNotIndependentAgreement() throws Exception {
+        EvidenceLedger ledger = new EvidenceLedger();
+        long now = System.currentTimeMillis();
+        record(ledger, "40", EvidenceLedger.Source.LOCAL_OCR, now - 3000L);
+        record(ledger, "40", EvidenceLedger.Source.CLOUD_VISION, now - 1000L);
+        assertTrue(ledger.debugSummary().contains("0 bestätigt"));
+        assertTrue(ledger.toPromptContext().contains("gold=40"));
+    }
+
+    @Test public void differentScreenshotsMustNotReportFalseSimultaneousConflict() throws Exception {
+        EvidenceLedger ledger = new EvidenceLedger();
+        long now = System.currentTimeMillis();
+        record(ledger, "25", EvidenceLedger.Source.LOCAL_OCR, now - 3000L);
+        record(ledger, "30", EvidenceLedger.Source.CLOUD_VISION, now - 1000L);
+        assertFalse(ledger.hasFreshConflict());
+        assertTrue(ledger.toPromptContext().contains("gold=30"));
+    }
+
     private static OpenAIClient.CoachResult cloudWithGold(int gold) {
         return new OpenAIClient.CoachResult(
                 "PLANUNG", "", "", "", false, "INFO", "MITTEL",
