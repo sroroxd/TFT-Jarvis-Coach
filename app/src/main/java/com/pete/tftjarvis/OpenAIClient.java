@@ -14,10 +14,12 @@ import java.nio.charset.StandardCharsets;
 public final class OpenAIClient {
     public static final class CoachResult {
         public final String call;
+        public final String plan;
         public final String state;
 
-        CoachResult(String call, String state) {
+        CoachResult(String call, String plan, String state) {
             this.call = call;
+            this.plan = plan;
             this.state = state;
         }
     }
@@ -50,20 +52,33 @@ public final class OpenAIClient {
                 - Keine veralteten Set-17-Empfehlungen oder Set-17-Bezeichnungen als aktuelle Referenz verwenden.
                 - Wenn eine konkrete Information nicht sicher erkennbar ist, behaupte sie nicht.
 
+                Strategische Analyse:
+                - Bewerte nicht nur den Shop, sondern das gesamte sichtbare Board als System.
+                - Prüfe aktive und naheliegende Synergien/Attribute, Frontline, Backline, Hauptcarry, Haupttank und Item-Halter.
+                - Prüfe Gold, Level, Lebenspunkte, Bank, Streak und Tempo soweit sichtbar.
+                - Entscheide, ob die aktuelle Linie gehalten, verstärkt oder verlassen werden sollte.
+                - Leite einen realistischen Zielpfad für die nächsten Stufen ab: Reroll, Leveln, stabilisieren, Pivot oder auf Board-Cap skalieren.
+                - Berücksichtige Contest und Gegner nur, wenn sie im Bild sicher erkennbar sind.
+                - Bevorzuge den Pfad mit der höchsten realistischen Chance auf Platz 1, nicht bloß die bequemste Synergie.
+
                 Entscheidungsreihenfolge:
                 1. Zeitkritische Entscheidung: Augmentierung, Shop-Kauf, Rollen, Leveln, Gegenstand bauen, Positionierung.
-                2. Boardstärke, Lebenspunkte, Gold, Level, Bank, Gegenstände, Attribute und Gegner soweit sichtbar.
-                3. Entscheide eine beste Aktion statt mehrere gleichwertige Möglichkeiten aufzuzählen.
-                4. Bevorzuge kurzfristige Stabilisierung, wenn deutliche Niederlagen die Siegchance stärker gefährden als weiteres Sparen.
+                2. Boardstärke und aktuelle Synergien.
+                3. Carry/Tank/Item-Halter und nächste sinnvolle Verstärkung.
+                4. Econ-, Level- und Reroll-Plan.
+                5. Ziel-Comp oder Pivot-Richtung, soweit aus sicheren Informationen ableitbar.
+                6. Bevorzuge kurzfristige Stabilisierung, wenn deutliche Niederlagen die Siegchance stärker gefährden als weiteres Sparen.
 
                 Ausgabe:
                 - call = eine unmittelbar ausführbare Aktion, maximal sieben deutsche Wörter.
-                - state = nur sicher erkannter Kurzstatus, maximal 32 deutsche Wörter.
+                - plan = strategischer Kurzplan mit Synergie-/Board-Richtung, Carry/Tank und nächstem Meilenstein, maximal 32 deutsche Wörter.
+                - state = sicher erkannter Match-Kurzstatus für die nächste Analyse, maximal 52 deutsche Wörter.
                 - Wenn keine konkrete Aktion sicher ableitbar ist: call = "Nicht sicher erkennbar".
+                - Wenn noch kein Match läuft, darf plan kurz den erkannten Vor-Match-Zustand nennen.
                 - Keine Erklärtexte außerhalb des JSON.
 
                 Antworte NUR als kompaktes JSON-Objekt:
-                {"call":"maximal sieben deutsche Wörter","state":"maximal 32 deutsche Wörter zum sicher erkannten Boardzustand"}
+                {"call":"maximal sieben deutsche Wörter","plan":"maximal 32 deutsche Wörter","state":"maximal 52 deutsche Wörter"}
                 """;
 
         JSONObject body = new JSONObject();
@@ -103,11 +118,12 @@ public final class OpenAIClient {
         try {
             JSONObject parsed = new JSONObject(stripCodeFence(text));
             String call = clampWords(parsed.optString("call", "Nicht sicher erkennbar"), 7);
-            String state = clampWords(parsed.optString("state", ""), 32);
+            String plan = clampWords(parsed.optString("plan", ""), 32);
+            String state = clampWords(parsed.optString("state", ""), 52);
             if (call.trim().isEmpty()) call = "Nicht sicher erkennbar";
-            return new CoachResult(call, state);
+            return new CoachResult(call, plan, state);
         } catch (Exception ignored) {
-            return new CoachResult(clampWords(text, 7), "");
+            return new CoachResult(clampWords(text, 7), "", "");
         }
     }
 

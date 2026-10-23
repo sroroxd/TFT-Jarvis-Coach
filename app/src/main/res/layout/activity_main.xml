@@ -80,7 +80,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="MERKEN / JETZT ANALYSIEREN" />
+            android:text="JETZT ANALYSIEREN" />
 
         <Button
             android:id="@+id/stopButton"
@@ -100,7 +100,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="Run-Profil: Set 18 · Patch 18.5. Im Spiel erscheint oben das JARVIS-Overlay. MERKEN analysiert sofort. AUTO wiederholt das Coaching. RESET löscht den Match-Kurzstatus. Keine automatischen Klicks im Spiel."
+            android:text="Run-Profil: Set 18 · Patch 18.5. Im Spiel erscheint oben das JARVIS-Overlay. ANALYSE bewertet Board, Synergien und nächste Schritte. AUTO wiederholt das Coaching. RESET löscht den Match-Kurzstatus. Keine automatischen Klicks im Spiel."
             android:textColor="#B0B0B0"
             android:textSize="14sp" />
 

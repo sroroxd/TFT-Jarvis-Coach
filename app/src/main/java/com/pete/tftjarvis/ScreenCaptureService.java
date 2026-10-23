@@ -152,7 +152,7 @@ public class ScreenCaptureService extends Service {
             try {
                 OpenAIClient.CoachResult result = OpenAIClient.coach(apiKey, model, frame, previousState);
                 if (result.state != null && !result.state.trim().isEmpty()) previousState = result.state;
-                publishCall(result.call);
+                publishCall(result.call, result.plan);
             } catch (Exception e) {
                 String msg = e.getMessage() == null ? "Analysefehler" : e.getMessage();
                 if (msg.length() > 95) msg = msg.substring(0, 95) + "…";
@@ -163,9 +163,13 @@ public class ScreenCaptureService extends Service {
         });
     }
 
-    private void publishCall(String call) {
+    private void publishCall(String call, String plan) {
         mainHandler.post(() -> {
-            setCoachText(call);
+            String display = call;
+            if (plan != null && !plan.trim().isEmpty()) {
+                display = call + "\nPLAN: " + plan;
+            }
+            setCoachText(display);
             if (tts != null) tts.speak(call, TextToSpeech.QUEUE_FLUSH, null, "tft-call");
             NotificationManager nm = getSystemService(NotificationManager.class);
             nm.notify(NOTIFICATION_ID, buildNotification(call));
@@ -275,7 +279,7 @@ public class ScreenCaptureService extends Service {
         overlay.addView(coachText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         Button rememberButton = new Button(this);
-        rememberButton.setText("MERKEN");
+        rememberButton.setText("ANALYSE");
         rememberButton.setAllCaps(false);
         rememberButton.setOnClickListener(v -> analyzeCurrentFrame());
         overlay.addView(rememberButton);
