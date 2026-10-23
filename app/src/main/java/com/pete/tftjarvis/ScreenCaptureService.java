@@ -47,6 +47,7 @@ public class ScreenCaptureService extends Service {
     public static final String EXTRA_RESULT_DATA = "resultData";
     public static final String EXTRA_API_KEY = "apiKey";
     public static final String EXTRA_MODEL = "model";
+    public static final String EXTRA_PROVIDER = "provider";
 
     private static final String CHANNEL_ID = "tft_capture";
     private static final int NOTIFICATION_ID = 17;
@@ -65,6 +66,7 @@ public class ScreenCaptureService extends Service {
     private String lastSpokenKey = "";
     private long lastSpokenAt = 0L;
 
+    private String provider = ConfigStore.PROVIDER_GEMINI;
     private String apiKey = "";
     private String model = GeminiClient.DEFAULT_MODEL;
     private String previousState = "";
@@ -111,13 +113,36 @@ public class ScreenCaptureService extends Service {
         startForegroundCompat(buildNotification("Bildschirm-Coaching aktiv"));
 
         if (intent != null) {
+            String providedProvider = intent.getStringExtra(EXTRA_PROVIDER);
             String providedKey = intent.getStringExtra(EXTRA_API_KEY);
             String providedModel = intent.getStringExtra(EXTRA_MODEL);
+
+            if (ConfigStore.PROVIDER_OPENAI.equalsIgnoreCase(providedProvider)) {
+                provider = ConfigStore.PROVIDER_OPENAI;
+            } else if (ConfigStore.PROVIDER_GEMINI.equalsIgnoreCase(providedProvider)) {
+                provider = ConfigStore.PROVIDER_GEMINI;
+            } else {
+                provider = ConfigStore.loadProvider(this);
+            }
+
             if (providedKey != null && !providedKey.trim().isEmpty()) apiKey = providedKey;
             if (providedModel != null && !providedModel.trim().isEmpty()) model = providedModel;
+        } else {
+            provider = ConfigStore.loadProvider(this);
         }
-        if (apiKey.trim().isEmpty()) apiKey = ConfigStore.loadApiKey(this);
-        if (model.trim().isEmpty()) model = ConfigStore.loadModel(this);
+
+        if (ConfigStore.PROVIDER_GEMINI.equals(provider)) {
+            if (apiKey.trim().isEmpty()) apiKey = ConfigStore.loadGeminiApiKey(this);
+            if (model.trim().isEmpty() || model.startsWith("gpt-")) {
+                model = ConfigStore.loadGeminiModel(this);
+            }
+        } else {
+            if (apiKey.trim().isEmpty()) apiKey = ConfigStore.loadApiKey(this);
+            if (model.trim().isEmpty() || model.startsWith("gemini-")) {
+                model = ConfigStore.loadModel(this);
+            }
+        }
+
         smartAutoEnabled = ConfigStore.loadSmartAuto(this);
 
         createOverlayIfAllowed();
@@ -165,7 +190,8 @@ public class ScreenCaptureService extends Service {
             analyzing.set(false);
             long remainingSeconds = Math.max(1L, (remainingMs + 999L) / 1000L);
             if (remainingSeconds > 30L) {
-                setCoachText("Gemini Free pausiert – später erneut");
+                setCoachText((ConfigStore.PROVIDER_GEMINI.equals(provider) ? "Gemini" : "OpenAI")
+                        + "-Limit aktiv – später erneut");
             } else {
                 setCoachText("Rate-Limit – noch " + remainingSeconds + " s");
             }
@@ -174,7 +200,9 @@ public class ScreenCaptureService extends Service {
 
         if (apiKey == null || apiKey.trim().isEmpty()) {
             analyzing.set(false);
-            setCoachText("Gemini API-Key fehlt");
+            setCoachText(ConfigStore.PROVIDER_GEMINI.equals(provider)
+                    ? "Gemini API-Key fehlt"
+                    : "OpenAI API-Key fehlt");
             return;
         }
 
@@ -199,7 +227,12 @@ public class ScreenCaptureService extends Service {
         final boolean manualRequest = currentAnalysisManual;
         aiExecutor.execute(() -> {
             try {
-                OpenAIClient.CoachResult result = GeminiClient.coach(apiKey, model, frame, previousState);
+                OpenAIClient.CoachResult result;
+                if (ConfigStore.PROVIDER_GEMINI.equals(provider)) {
+                    result = GeminiClient.coach(apiKey, model, frame, previousState);
+                } else {
+                    result = OpenAIClient.coach(apiKey, model, frame, previousState);
+                }
                 lastPhase = result.phase;
 
                 boolean hadMatchMemory = previousState != null && !previousState.trim().isEmpty();
@@ -224,14 +257,9 @@ public class ScreenCaptureService extends Service {
                 publishCall(result.phase, result.call, result.plan, result.priority, result.confidence,
                         showResetNotice, manualRequest);
             } catch (GeminiClient.RateLimitException e) {
-                long serverWaitMs = Math.min(86_400_000L, Math.max(1L, e.retryAfterSeconds) * 1000L);
-                rateLimitedUntil = System.currentTimeMillis() + serverWaitMs;
-                if (e.retryAfterSeconds > 30) {
-                    // Respect the server's retry window; do not turn a long limit into a new request after 60 seconds.
-                    setCoachText("Cloud pausiert – später erneut");
-                } else {
-                    setCoachText("Gemini-Limit – " + e.retryAfterSeconds + " s Pause");
-                }
+                handleRateLimit(e.retryAfterSeconds, "Gemini");
+            } catch (OpenAIClient.RateLimitException e) {
+                handleRateLimit(e.retryAfterSeconds, "OpenAI");
             } catch (Exception e) {
                 String msg = e.getMessage() == null ? "Analysefehler" : e.getMessage();
                 if (msg.length() > 95) msg = msg.substring(0, 95) + "…";
@@ -240,6 +268,18 @@ public class ScreenCaptureService extends Service {
                 analyzing.set(false);
             }
         });
+    }
+
+    private void handleRateLimit(int retryAfterSeconds, String source) {
+        long seconds = Math.max(1L, retryAfterSeconds);
+        long waitMs = Math.min(86_400_000L, seconds * 1000L);
+        rateLimitedUntil = System.currentTimeMillis() + waitMs;
+
+        if (seconds > 30L) {
+            setCoachText(source + "-Limit aktiv – später erneut");
+        } else {
+            setCoachText(source + "-Limit – " + seconds + " s Pause");
+        }
     }
 
     private void publishCall(String phase, String call, String plan, String priority,
@@ -603,7 +643,10 @@ public class ScreenCaptureService extends Service {
             if (analyzing.get()) {
                 status = "JARVIS …";
             } else {
-                status = smartAutoEnabled ? "JARVIS ◉" : "JARVIS ✓";
+                String source = ConfigStore.PROVIDER_GEMINI.equals(provider) ? "G" : "O";
+                status = smartAutoEnabled
+                        ? "JARVIS " + source + " ◉"
+                        : "JARVIS " + source + " ✓";
             }
             coachText.setText(status);
         }
