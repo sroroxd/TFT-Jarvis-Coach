@@ -14,7 +14,7 @@ android {
         versionName '0.9.0-beta1'
     }
 
-    // The release build keeps one permanent signing identity for Android updates.
+    // The release build uses one permanent signing identity for repeatable Android updates.
     signingConfigs {
         stableRelease {
             def keyPath = System.getenv('JARVIS_KEYSTORE_PATH')
