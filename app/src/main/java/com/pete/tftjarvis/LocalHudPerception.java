@@ -103,7 +103,7 @@ final class LocalHudPerception implements AutoCloseable {
         }
 
         String phase = lastPhase == null ? "UNKLAR" : lastPhase.trim().toUpperCase(Locale.ROOT);
-        if ("VOR_MATCH".equals(phase) || "ERGEBNIS".equals(phase)) {
+        if ("ERGEBNIS".equals(phase)) {
             return empty(now);
         }
 
@@ -114,7 +114,13 @@ final class LocalHudPerception implements AutoCloseable {
                     900,
                     TimeUnit.MILLISECONDS
             );
-            return parse(text, input.getWidth(), input.getHeight(), now);
+            Observation observation = parse(text, input.getWidth(), input.getHeight(), now);
+            // The first in-game frame arrives while lastPhase is still VOR_MATCH.
+            // Trust early numeric HUD observations only if a game stage is seen.
+            if ("VOR_MATCH".equals(phase) && observation.stage == null) {
+                return empty(now);
+            }
+            return observation;
         } catch (Exception ignored) {
             return empty(now);
         } finally {
@@ -137,12 +143,15 @@ final class LocalHudPerception implements AutoCloseable {
         }
 
         Field<String> stage = findStage(candidates, width, height);
+        // The level number is inside the small blue badge, NOT the
+        // adjacent "ERF kaufen" button whose price frequently shows "4".
         Field<Integer> level = findNumber(candidates, width, height,
-                1, 10, 0.00f, 0.34f, 0.62f, 1.00f, 0.12f, 0.86f);
+                1, 10, HudRegions.OWN_LEVEL);
         Field<Integer> gold = findNumber(candidates, width, height,
-                0, 999, 0.68f, 1.00f, 0.58f, 1.00f, 0.90f, 0.86f);
-        Field<Integer> health = findNumber(candidates, width, height,
-                0, 100, 0.18f, 0.72f, 0.00f, 0.22f, 0.51f, 0.08f);
+                0, 999, HudRegions.OWN_GOLD);
+        // Never treat the top-center combat timer as own HP.
+        // Own HP needs a future player-identity anchored OCR source.
+        Field<Integer> health = null;
 
         return new Observation(level, gold, health, stage, now);
     }
@@ -182,12 +191,7 @@ final class LocalHudPerception implements AutoCloseable {
             int height,
             int min,
             int max,
-            float left,
-            float right,
-            float top,
-            float bottom,
-            float expectedX,
-            float expectedY
+            HudRegions.Region region
     ) {
         Candidate best = null;
         Integer bestValue = null;
@@ -196,12 +200,12 @@ final class LocalHudPerception implements AutoCloseable {
         for (Candidate c : candidates) {
             float x = c.centerX(width);
             float y = c.centerY(height);
-            if (x < left || x > right || y < top || y > bottom) continue;
+            if (!region.contains(x, y)) continue;
 
             Integer value = parseNumericToken(c.text);
             if (value == null || value < min || value > max) continue;
 
-            float distance = Math.abs(x - expectedX) + Math.abs(y - expectedY);
+            float distance = Math.abs(x - region.expectedX) + Math.abs(y - region.expectedY);
             float score = c.heightNorm(height) * 120f - distance * 18f;
             if (score > bestScore) {
                 best = c;

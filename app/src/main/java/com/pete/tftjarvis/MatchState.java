@@ -75,21 +75,21 @@ public final class MatchState {
             updateLevel(localHud.level.value,
                     localConfidence(localHud.level, result.level == localHud.level.value), now);
         } else {
-            updateLevel(result.level, observationConfidence, now);
+            updateLevel(result.level, cloudOnlyConfidence(observationConfidence), now);
         }
 
         if (localHud != null && localHud.gold != null) {
             updateGold(localHud.gold.value,
                     localConfidence(localHud.gold, result.gold == localHud.gold.value), now);
         } else {
-            updateGold(result.gold, observationConfidence, now);
+            updateGold(result.gold, cloudOnlyConfidence(observationConfidence), now);
         }
 
         if (localHud != null && localHud.health != null) {
             updateHealth(localHud.health.value,
                     localConfidence(localHud.health, result.health == localHud.health.value), now);
         } else {
-            updateHealth(result.health, observationConfidence, now);
+            updateHealth(result.health, cloudOnlyConfidence(observationConfidence), now);
         }
 
         String seenStage = cleanOrNull(result.stage);
@@ -97,7 +97,7 @@ public final class MatchState {
             boolean agrees = seenStage != null && seenStage.equals(localHud.stage.value);
             updateStage(localHud.stage.value, localConfidence(localHud.stage, agrees), now);
         } else {
-            updateStage(seenStage, observationConfidence, now);
+            updateStage(seenStage, cloudOnlyConfidence(observationConfidence), now);
         }
 
         updateList(result.board, board, observationConfidence);
@@ -127,7 +127,7 @@ public final class MatchState {
 
     public synchronized String toPromptContext() {
         StringBuilder sb = new StringBuilder();
-        sb.append("--- VERIFIZIERTER MATCH-STATE ---\n");
+        sb.append("--- BEOBACHTETER MATCH-STATE (TEILWEISE UNBESTÄTIGT) ---\n");
         sb.append("Der aktuelle Screenshot ist autoritativ. Dieser State ist nur fortlaufender Kontext.\n");
         sb.append("Fehlende aktuelle Sichtbarkeit bedeutet NICHT automatisch, dass ein bestätigter Wert verschwunden ist.\n");
         sb.append("Nie aus alten Werten neue Fakten erfinden; bei Widerspruch aktuellen Screenshot vorsichtig prüfen.\n");
@@ -245,7 +245,26 @@ public final class MatchState {
     private void updateLevel(int raw, String conf, long now) {
         Integer value = boundedInt(raw, 1, 10);
         if (value == null || "NIEDRIG".equals(conf)) return;
-        if (level != null && value < level) return;
+        if (level != null && value < level) {
+            // A TFT level normally does not fall. However a wrongly recognized
+            // earlier level must not remain displayed as HOCH forever.
+            // Mark it uncertain and require two consistent observations before
+            // correcting the stored value downwards.
+            levelConfidence = "NIEDRIG";
+            if (value.equals(pendingLevel)) pendingLevelCount++;
+            else {
+                pendingLevel = value;
+                pendingLevelCount = 1;
+            }
+            if (pendingLevelCount >= 2) {
+                level = value;
+                levelConfidence = "MITTEL";
+                levelObservedAt = now;
+                pendingLevel = null;
+                pendingLevelCount = 0;
+            }
+            return;
+        }
 
         boolean largeJump = level != null && value > level + 2;
         if ("HOCH".equals(conf) && !largeJump) {
@@ -360,6 +379,11 @@ public final class MatchState {
         }
     }
 
+    private static String cloudOnlyConfidence(String cloudConfidence) {
+        // One generative response is not an independently confirmed HUD value.
+        return "NIEDRIG".equals(cloudConfidence) ? "NIEDRIG" : "MITTEL";
+    }
+
     private static String localConfidence(LocalHudPerception.Field<?> field, boolean cloudAgrees) {
         if (field == null) return "NIEDRIG";
         return cloudAgrees ? "HOCH" : normalizeConfidence(field.confidence);
@@ -438,7 +462,7 @@ public final class MatchState {
     private static String ageLabel(long at) {
         if (at <= 0L) return "Zeit unbekannt";
         long sec = Math.max(0L, (System.currentTimeMillis() - at) / 1000L);
-        if (sec < 5L) return "gerade bestätigt";
+        if (sec < 5L) return "gerade beobachtet";
         if (sec < 60L) return "vor " + sec + "s";
         return "vor " + (sec / 60L) + "min";
     }

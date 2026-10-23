@@ -371,7 +371,8 @@ public class ScreenCaptureService extends Service {
                             rateLimitedUntil,
                             System.currentTimeMillis() + 20_000L
                     );
-                    setCoachText("Gemini ausgelastet – Plan bleibt gespeichert");
+                    setCoachText((ConfigStore.PROVIDER_GEMINI.equals(provider) ? "Gemini" : "OpenAI")
+                            + " pausiert – Plan ungeprüft");
                 } else {
                     // Do not expose untrusted model JSON, HTTP bodies, or stack messages.
                     android.util.Log.w("TFTJarvis", "Analyse fehlgeschlagen: "
