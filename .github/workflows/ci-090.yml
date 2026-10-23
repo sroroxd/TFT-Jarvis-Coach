@@ -34,6 +34,18 @@ jobs:
             -storepass "$TEMP_PASSWORD" -keypass "$TEMP_PASSWORD" >/dev/null
           echo "JARVIS_KEYSTORE_PATH=$RUNNER_TEMP/ci-release.p12" >> "$GITHUB_ENV"
           echo "JARVIS_SIGNING_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
+      - name: Validate encrypted signing-key roundtrip
+        run: |
+          set -euo pipefail
+          printf '%s' "$JARVIS_SIGNING_PASSWORD" | \
+            gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-fd 0 \
+              --cipher-algo AES256 --armor --symmetric \
+              --output "$RUNNER_TEMP/ci-release.p12.asc" "$JARVIS_KEYSTORE_PATH"
+          printf '%s' "$JARVIS_SIGNING_PASSWORD" | \
+            gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-fd 0 \
+              --output "$RUNNER_TEMP/ci-release-restored.p12" \
+              --decrypt "$RUNNER_TEMP/ci-release.p12.asc"
+          cmp "$JARVIS_KEYSTORE_PATH" "$RUNNER_TEMP/ci-release-restored.p12"
       - name: Build and validate signed release APK (CI identity, never published)
         run: |
           set -euo pipefail
