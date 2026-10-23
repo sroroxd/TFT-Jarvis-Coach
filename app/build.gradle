@@ -17,11 +17,13 @@ android {
     signingConfigs {
         stableRelease {
             def keyPath = System.getenv('JARVIS_KEYSTORE_PATH')
-            if (keyPath) {
+            def signingPassword = System.getenv('JARVIS_SIGNING_PASSWORD')
+            if (keyPath && signingPassword) {
                 storeFile file(keyPath)
-                storePassword System.getenv('JARVIS_STORE_PASSWORD')
-                keyAlias System.getenv('JARVIS_KEY_ALIAS')
-                keyPassword System.getenv('JARVIS_KEY_PASSWORD')
+                storePassword signingPassword
+                keyAlias 'jarvis-release'
+                keyPassword signingPassword
+                storeType 'pkcs12'
             }
         }
     }
