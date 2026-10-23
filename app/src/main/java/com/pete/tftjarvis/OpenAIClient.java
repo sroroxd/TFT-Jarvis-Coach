@@ -76,6 +76,14 @@ public final class OpenAIClient {
                 - Wenn ein sichtbarer Shop-Champion bewusst NICHT gekauft werden sollte, erwähne ihn nur, wenn das Weglassen strategisch wichtig ist.
                 - Maximal drei unmittelbare Aktionen pro call, geordnet nach Priorität.
 
+                Karussell-Regel:
+                - Im Karussell niemals generisch "nächstgelegenen Champion" oder "irgendeinen Gegenstand" empfehlen.
+                - Priorisiere den Gegenstand, der den aktuellen Carry-/Tank-/Itemplan am stärksten verbessert; Championwert ist sekundär, außer ein konkreter Champion vervollständigt ein wichtiges Upgrade oder ist außergewöhnlich wertvoll.
+                - Nenne wenn sicher erkennbar konkret: "Nimm <Champion> mit <Gegenstand>".
+                - Wenn der Champion nicht sicher erkennbar ist, aber der Gegenstand schon: "Nimm <Gegenstand>".
+                - Wenn weder Zielchampion noch Zielgegenstand sicher erkennbar ist: call = "Karussellziel nicht sicher erkennbar".
+                - Berücksichtige aktuelle Lebenspunkte/Pick-Reihenfolge nur soweit sichtbar; erfinde keine Erreichbarkeit.
+
                 Ausgabe:
                 - call = bis zu drei unmittelbar ausführbare Aktionen in einem Satz, maximal 16 deutsche Wörter.
                 - plan = strategischer Kurzplan mit Synergie-/Board-Richtung, Carry/Tank und nächstem Meilenstein, maximal 32 deutsche Wörter.
