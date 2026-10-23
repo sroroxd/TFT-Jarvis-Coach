@@ -32,13 +32,21 @@ public final class OpenAIClient {
         public final List<String> traits;
         public final String carry;
         public final String tank;
+        public final String stage;
+        public final String primaryTrait;
+        public final String compPlan;
+        public final String strategyConfidence;
+        public final boolean pivotRecommended;
+        public final String pivotReason;
 
         CoachResult(String phase, String call, String plan, String state, boolean newMatch,
                     String priority, String confidence,
                     int level, int gold, int health,
                     List<String> board, List<String> bench, List<String> items,
                     List<String> augments, List<String> traits,
-                    String carry, String tank) {
+                    String carry, String tank,
+                    String stage, String primaryTrait, String compPlan,
+                    String strategyConfidence, boolean pivotRecommended, String pivotReason) {
             this.phase = phase;
             this.call = call;
             this.plan = plan;
@@ -56,6 +64,12 @@ public final class OpenAIClient {
             this.traits = traits;
             this.carry = carry;
             this.tank = tank;
+            this.stage = stage;
+            this.primaryTrait = primaryTrait;
+            this.compPlan = compPlan;
+            this.strategyConfidence = strategyConfidence;
+            this.pivotRecommended = pivotRecommended;
+            this.pivotReason = pivotReason;
         }
     }
 
@@ -105,8 +119,17 @@ public final class OpenAIClient {
                 - Das aktuelle Bild hat immer Vorrang. Erfinde niemals Champions, Items, Augments, Attribute, Gold, Leben, Shop oder Gegnerdaten.
                 - Bei entscheidender Unsicherheit: call = "Nicht sicher erkennbar".
                 - VOR_MATCH: nur Navigation. KAMPF: keine erfundenen Kauf-, Roll-, Level- oder Itemaktionen.
-                - Priorität: zeitkritische Aktion > Boardstärke/Synergien/Carry/Tank/Items > Econ/Level/Reroll/Pivot.
-                - Nenne im call höchstens drei unmittelbar sinnvolle Aktionen. Kaufe nur für Board, Pair/Upgrade, Synergie, Carry/Tank-Pfad oder klaren Pivot.
+                - Behandle das Match als fortlaufende Partie, NICHT als unabhängige Screenshots.
+                - Der vorherige Match-State enthält die bisherige strategische Richtung. Halte diese Richtung stabil,
+                  solange der aktuelle Screenshot keinen klaren Grund für einen Pivot zeigt.
+                - Wenn ein Kern-Trait/Comp-Pfad bereits erkennbar und mehrfach bestätigt ist, ist er VERBINDLICHE LEITLINIE.
+                  Empfiehl keine zufälligen Shop-Einheiten außerhalb dieses Pfads.
+                - Eine Off-Comp-Einheit darf nur empfohlen werden, wenn sie (a) ein direktes Pair/Upgrade einer bereits gespielten Einheit ist,
+                  (b) eine klar notwendige Carry-/Tank-Lücke sofort schließt oder (c) Teil eines ausdrücklich begründeten Pivots ist.
+                - Wenn im Shop nichts den Kernplan sinnvoll stärkt: lieber "Nichts kaufen; Gold halten" statt irgendeinen Champion zu kaufen.
+                - Ändere primary_trait/comp_plan nicht wegen eines einzelnen Shops. pivot_recommended nur bei starkem, sichtbarem Grund.
+                - Priorität: zeitkritische Aktion > bestehende Win-Condition/Comp-Kern > Boardstärke/Synergien/Carry/Tank/Items > Econ/Level/Reroll/Pivot.
+                - Nenne im call höchstens drei unmittelbar sinnvolle Aktionen. Kaufe nur für Kern-Comp, Pair/Upgrade, Synergie, Carry/Tank-Pfad oder klaren Pivot.
                 - Karussell: Item priorisieren; Champion nur nennen, wenn sicher erkennbar.
                 - new_match nur true, wenn ein frisch gestartetes Match gegenüber dem vorherigen Kurzstatus eindeutig erkennbar ist; bei Zweifel false.
                 - state enthält nur sicher erkannte, für die nächste Entscheidung relevante Match-Fakten.
@@ -114,7 +137,13 @@ public final class OpenAIClient {
                   level, gold, health: nur wenn sicher sichtbar, sonst -1.
                   board, bench, items, augments, traits: nur sicher erkannte Namen; unbekannt = [].
                   carry und tank: nur wenn sicher ableitbar, sonst leerer String.
-                  Diese Felder beschreiben ausschließlich den AKTUELLEN Screenshot, nicht geratenen alten Kontext.
+                  stage: sichtbare Runde wie "2-5", sonst leerer String.
+                  primary_trait: der aktuell stärkste erkennbare strategische Kern-Trait, z. B. "Ahnenholz"; sonst leer.
+                  comp_plan: knapper strategischer Pfad für DIESE Partie, der auf Board/Traits/Items/Augments + bisherigem State aufbaut.
+                  strategy_confidence: HOCH/MITTEL/NIEDRIG.
+                  pivot_recommended: nur true, wenn ein Wechsel vom bisherigen Kernplan klar besser begründet ist.
+                  pivot_reason: konkrete sichtbare Begründung; sonst leer.
+                  Diese Felder beschreiben ausschließlich den AKTUELLEN Screenshot plus die fortlaufende Strategie; nichts raten.
                 - priority:
                   KRITISCH = Entscheidung muss jetzt oder in wenigen Sekunden erfolgen; Verzögerung kann die Runde/Option kosten.
                   WICHTIG = strategisch relevant für die nächsten Schritte, aber nicht sofort zeitkritisch.
@@ -162,6 +191,14 @@ public final class OpenAIClient {
         properties.put("traits", new JSONObject(stringArray.toString()));
         properties.put("carry", new JSONObject().put("type", "string"));
         properties.put("tank", new JSONObject().put("type", "string"));
+        properties.put("stage", new JSONObject().put("type", "string"));
+        properties.put("primary_trait", new JSONObject().put("type", "string"));
+        properties.put("comp_plan", new JSONObject().put("type", "string"));
+        properties.put("strategy_confidence", new JSONObject()
+                .put("type", "string")
+                .put("enum", new JSONArray().put("HOCH").put("MITTEL").put("NIEDRIG")));
+        properties.put("pivot_recommended", new JSONObject().put("type", "boolean"));
+        properties.put("pivot_reason", new JSONObject().put("type", "string"));
 
         JSONObject schema = new JSONObject()
                 .put("type", "object")
@@ -171,7 +208,9 @@ public final class OpenAIClient {
                         .put("priority").put("confidence")
                         .put("level").put("gold").put("health")
                         .put("board").put("bench").put("items").put("augments").put("traits")
-                        .put("carry").put("tank"))
+                        .put("carry").put("tank")
+                        .put("stage").put("primary_trait").put("comp_plan")
+                        .put("strategy_confidence").put("pivot_recommended").put("pivot_reason"))
                 .put("additionalProperties", false);
 
         body.put("text", new JSONObject().put("format", new JSONObject()
@@ -246,6 +285,12 @@ public final class OpenAIClient {
             List<String> traits = jsonStringList(parsed.optJSONArray("traits"));
             String carry = parsed.optString("carry", "").trim();
             String tank = parsed.optString("tank", "").trim();
+            String stage = parsed.optString("stage", "").trim();
+            String primaryTrait = parsed.optString("primary_trait", "").trim();
+            String compPlan = clampWords(parsed.optString("comp_plan", ""), 26);
+            String strategyConfidence = normalizeConfidence(parsed.optString("strategy_confidence", "NIEDRIG"));
+            boolean pivotRecommended = parsed.optBoolean("pivot_recommended", false);
+            String pivotReason = clampWords(parsed.optString("pivot_reason", ""), 22);
             if (call.trim().isEmpty()) call = "Nicht sicher erkennbar";
             if ("Nicht sicher erkennbar".equalsIgnoreCase(call.trim())) {
                 priority = "INFO";
@@ -256,12 +301,14 @@ public final class OpenAIClient {
                 priority = "INFO";
             }
             return new CoachResult(phase, call, plan, state, newMatch, priority, confidence,
-                    level, gold, health, board, bench, items, augments, traits, carry, tank);
+                    level, gold, health, board, bench, items, augments, traits, carry, tank,
+                    stage, primaryTrait, compPlan, strategyConfidence, pivotRecommended, pivotReason);
         } catch (Exception ignored) {
             return new CoachResult("UNKLAR", clampWords(text, 16), "", "", false, "INFO", "NIEDRIG",
                     -1, -1, -1,
                     new ArrayList<>(), new ArrayList<>(), new ArrayList<>(),
-                    new ArrayList<>(), new ArrayList<>(), "", "");
+                    new ArrayList<>(), new ArrayList<>(), "", "",
+                    "", "", "", "NIEDRIG", false, "");
         }
     }
 
