@@ -69,6 +69,14 @@ public class ScreenCaptureService extends Service {
     private volatile long lastAnalyzeTapAt = 0L;
     private volatile boolean smartAutoEnabled = true;
     private volatile boolean speechMuted = false;
+    // Privacy-safe operational counters: never retain screen pixels, keys or prompts.
+    private final AtomicLong capturedFrameCount = new AtomicLong();
+    private final AtomicLong cloudAttemptCount = new AtomicLong();
+    private final AtomicLong cloudAcceptedCount = new AtomicLong();
+    private final AtomicLong cloudErrorCount = new AtomicLong();
+    private volatile long lastOcrMs;
+    private volatile long lastCloudMs;
+    private volatile String lastErrorType = "-";
     private volatile boolean currentAnalysisManual = false;
     private volatile String lastPhase = "UNKLAR";
     private volatile boolean matchEndedLock = false;
@@ -255,12 +263,14 @@ public class ScreenCaptureService extends Service {
         final long expectedGeneration = activeCaptureGeneration;
         final long capturedAt = localHud == null ? 0L : localHud.observedAt;
         aiExecutor.execute(() -> {
+            long cloudStart = System.nanoTime();
             try {
                 if (expectedGeneration != stateGeneration.get()) return;
                 evidenceLedger.recordLocal(localHud);
                 String stateContext = matchState.toPromptContext() + evidenceLedger.toPromptContext();
 
                 OpenAIClient.CoachResult result;
+                cloudAttemptCount.incrementAndGet();
                 if (ConfigStore.PROVIDER_GEMINI.equals(provider)) {
                     result = GeminiClient.coach(
                             apiKey, model, frame, detailFrame, detailLabel, stateContext);
@@ -286,6 +296,7 @@ public class ScreenCaptureService extends Service {
                 DecisionGate.GateResult gated = DecisionGate.validate(result, matchState, evidenceLedger);
                 result = gated.result;
                 if (result == null) throw new Exception("Entscheidung konnte nicht verifiziert werden");
+                cloudAcceptedCount.incrementAndGet();
                 String gateNotice = gated.blocked ? "GATE: " + gated.reason : null;
 
                 String resultPhase = result.phase;
@@ -365,14 +376,20 @@ public class ScreenCaptureService extends Service {
                 publishCall(resultPhase, result.call, result.plan, result.priority, result.confidence,
                         resetNotice, manualRequest);
             } catch (GeminiClient.RateLimitException e) {
+                cloudErrorCount.incrementAndGet();
+                lastErrorType = "GeminiRateLimit";
                 if (expectedGeneration != stateGeneration.get()) return;
                 smartFrameDetector.discardPendingAnalysis();
                 handleRateLimit(e.retryAfterSeconds, "Gemini");
             } catch (OpenAIClient.RateLimitException e) {
+                cloudErrorCount.incrementAndGet();
+                lastErrorType = "OpenAIRateLimit";
                 if (expectedGeneration != stateGeneration.get()) return;
                 smartFrameDetector.discardPendingAnalysis();
                 handleRateLimit(e.retryAfterSeconds, "OpenAI");
             } catch (Exception e) {
+                cloudErrorCount.incrementAndGet();
+                lastErrorType = e.getClass().getSimpleName();
                 // A late cloud error from a reset match must not replace the
                 // visible status or rate limit state of the next match.
                 if (expectedGeneration != stateGeneration.get()) return;
@@ -412,6 +429,7 @@ public class ScreenCaptureService extends Service {
                     setCoachText("Analyse fehlgeschlagen – erneut versuchen");
                 }
             } finally {
+                lastCloudMs = Math.max(0L, (System.nanoTime() - cloudStart) / 1_000_000L);
                 finishAnalysis();
             }
         });
@@ -566,6 +584,7 @@ public class ScreenCaptureService extends Service {
         try {
             image = reader.acquireLatestImage();
             if (image == null) return;
+            capturedFrameCount.incrementAndGet();
 
             long now = System.currentTimeMillis();
 
@@ -596,7 +615,9 @@ public class ScreenCaptureService extends Service {
             );
             padded.copyPixelsFromBuffer(buffer);
             Bitmap cropped = Bitmap.createBitmap(padded, 0, 0, image.getWidth(), image.getHeight());
+            long ocrStart = System.nanoTime();
             LocalHudPerception.Observation localHud = localHudPerception.observe(cropped, lastPhase);
+            lastOcrMs = Math.max(0L, (System.nanoTime() - ocrStart) / 1_000_000L);
             Bitmap upload = downscale(cropped, 1280);
             String cleanFrame = encodeJpeg(upload, 72);
 
@@ -828,7 +849,13 @@ public class ScreenCaptureService extends Service {
                         + (smartAutoEnabled ? "AN" : "AUS")
                         + " | Sprache: " + (speechMuted ? "STUMM" : "AN")
                         + " | Phase: " + lastPhase
-                        + " | " + evidenceLedger.debugSummary());
+                        + " | " + evidenceLedger.debugSummary()
+                        + " | Frames: " + capturedFrameCount.get()
+                        + " | Cloud: " + cloudAcceptedCount.get() + "/"
+                        + cloudAttemptCount.get()
+                        + " | Fehler: " + cloudErrorCount.get() + " (" + lastErrorType + ")"
+                        + " | OCR: " + lastOcrMs + "ms"
+                        + " | KI: " + lastCloudMs + "ms");
                 return true;
             }
             if ("Neue Partie / Gedächtnis zurücksetzen".equals(title)) {
