@@ -32,6 +32,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import java.io.ByteArrayOutputStream;
@@ -75,11 +76,22 @@ public class ScreenCaptureService extends Service {
     private LinearLayout overlay;
     private LinearLayout controlsRow;
     private TextView coachText;
+    private TextView transientCallText;
+    private TextView detailText;
     private TextView expandButton;
     private TextView autoButton;
     private boolean overlayExpanded;
     private String lastCoachText = "JARVIS bereit";
+    private String lastDetailText = "";
     private TextToSpeech tts;
+
+    private final Runnable hideTransientCall = new Runnable() {
+        @Override public void run() {
+            if (!overlayExpanded && transientCallText != null) {
+                transientCallText.setVisibility(View.GONE);
+            }
+        }
+    };
 
     private final Runnable autoTick = new Runnable() {
         @Override public void run() {
@@ -203,14 +215,24 @@ public class ScreenCaptureService extends Service {
 
     private void publishCall(String phase, String call, String plan, boolean showResetNotice) {
         mainHandler.post(() -> {
-            String display = "[" + phase + "] " + call;
+            String shortCall = "[" + phase + "] " + call;
+            StringBuilder detail = new StringBuilder(shortCall);
             if (plan != null && !plan.trim().isEmpty()) {
-                display = display + "\nPLAN: " + plan;
+                detail.append("\nPLAN: ").append(plan.trim());
             }
             if (showResetNotice) {
-                display = display + "\nMATCH: neuer Kontext";
+                detail.append("\nMATCH: neuer Kontext");
             }
-            setCoachText(display);
+
+            lastCoachText = shortCall;
+            lastDetailText = detail.toString();
+            updateHeaderStatus();
+            showTransientCall(shortCall);
+            if (detailText != null) {
+                detailText.setText(lastDetailText);
+                if (overlayExpanded) detailText.setVisibility(View.VISIBLE);
+            }
+
             if (tts != null) tts.speak(call, TextToSpeech.QUEUE_FLUSH, null, "tft-call");
             NotificationManager nm = getSystemService(NotificationManager.class);
             nm.notify(NOTIFICATION_ID, buildNotification(call));
@@ -318,51 +340,81 @@ public class ScreenCaptureService extends Service {
 
         overlay = new LinearLayout(this);
         overlay.setOrientation(LinearLayout.VERTICAL);
-        overlay.setPadding(dp(8), dp(4), dp(8), dp(4));
-        overlay.setBackground(makeRoundedBackground(0xDC111318, 14));
+        overlay.setPadding(dp(6), dp(3), dp(6), dp(3));
+        overlay.setBackground(makeRoundedBackground(0xD9111318, 16));
 
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
 
         coachText = new TextView(this);
-        coachText.setText(lastCoachText);
+        coachText.setText("JARVIS ✓");
         coachText.setTextColor(0xFFF4F4F4);
-        coachText.setTextSize(13f);
+        coachText.setTextSize(12f);
         coachText.setSingleLine(true);
-        coachText.setEllipsize(TextUtils.TruncateAt.END);
-        coachText.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.58f));
-        coachText.setPadding(dp(4), dp(2), dp(8), dp(2));
+        coachText.setPadding(dp(6), dp(2), dp(6), dp(2));
         attachDragBehavior(coachText);
         header.addView(coachText);
 
+        autoButton = makeChip("AUTO ○");
+        autoButton.setTextSize(9.5f);
+        autoButton.setPadding(dp(7), dp(3), dp(7), dp(3));
+        autoButton.setOnClickListener(v -> toggleAuto());
+        header.addView(autoButton);
+
         expandButton = makeChip("▾");
+        expandButton.setTextSize(10f);
+        expandButton.setPadding(dp(7), dp(3), dp(7), dp(3));
         expandButton.setContentDescription("JARVIS aufklappen");
         expandButton.setOnClickListener(v -> toggleOverlayExpanded());
         header.addView(expandButton);
 
         overlay.addView(header);
 
+        transientCallText = new TextView(this);
+        transientCallText.setTextColor(0xFFF4F4F4);
+        transientCallText.setTextSize(11.5f);
+        transientCallText.setMaxLines(2);
+        transientCallText.setEllipsize(TextUtils.TruncateAt.END);
+        transientCallText.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.52f));
+        transientCallText.setPadding(dp(7), dp(4), dp(7), dp(4));
+        transientCallText.setBackground(makeRoundedBackground(0xE0202329, 10));
+        LinearLayout.LayoutParams transientLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        transientLp.setMargins(0, dp(3), 0, 0);
+        transientCallText.setLayoutParams(transientLp);
+        transientCallText.setVisibility(View.GONE);
+        overlay.addView(transientCallText);
+
+        detailText = new TextView(this);
+        detailText.setTextColor(0xFFF4F4F4);
+        detailText.setTextSize(11.5f);
+        detailText.setMaxLines(5);
+        detailText.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.62f));
+        detailText.setPadding(dp(7), dp(4), dp(7), dp(2));
+        detailText.setVisibility(View.GONE);
+        overlay.addView(detailText);
+
         controlsRow = new LinearLayout(this);
         controlsRow.setOrientation(LinearLayout.HORIZONTAL);
         controlsRow.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        controlsRow.setPadding(0, dp(4), 0, 0);
+        controlsRow.setPadding(0, dp(3), 0, 0);
         controlsRow.setVisibility(View.GONE);
 
         TextView analyzeButton = makeChip("ANALYSE");
+        analyzeButton.setTextSize(10f);
+        analyzeButton.setPadding(dp(8), dp(4), dp(8), dp(4));
         analyzeButton.setOnClickListener(v -> analyzeCurrentFrame());
         controlsRow.addView(analyzeButton);
 
-        autoButton = makeChip("AUTO AUS");
-        autoButton.setOnClickListener(v -> toggleAuto());
-        controlsRow.addView(autoButton);
-
-        TextView resetButton = makeChip("RESET");
-        resetButton.setOnClickListener(v -> {
-            previousState = "";
-            setCoachText("Gedächtnis zurückgesetzt");
-        });
-        controlsRow.addView(resetButton);
+        TextView moreButton = makeChip("⋮");
+        moreButton.setTextSize(14f);
+        moreButton.setPadding(dp(8), dp(2), dp(8), dp(2));
+        moreButton.setContentDescription("Mehr");
+        moreButton.setOnClickListener(this::showMoreMenu);
+        controlsRow.addView(moreButton);
 
         overlay.addView(controlsRow);
 
@@ -379,6 +431,7 @@ public class ScreenCaptureService extends Service {
         overlayParams.x = dp(10);
         overlayParams.y = dp(10);
         windowManager.addView(overlay, overlayParams);
+        updateHeaderStatus();
     }
 
     private TextView makeChip(String label) {
@@ -407,19 +460,53 @@ public class ScreenCaptureService extends Service {
 
     private void toggleOverlayExpanded() {
         overlayExpanded = !overlayExpanded;
+        mainHandler.removeCallbacks(hideTransientCall);
+
         if (controlsRow != null) controlsRow.setVisibility(overlayExpanded ? View.VISIBLE : View.GONE);
-        if (coachText != null) {
-            coachText.setSingleLine(!overlayExpanded);
-            coachText.setMaxLines(overlayExpanded ? 4 : 1);
-            coachText.setEllipsize(overlayExpanded ? null : TextUtils.TruncateAt.END);
-            coachText.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * (overlayExpanded ? 0.72f : 0.58f)));
+        if (detailText != null) {
+            detailText.setText(lastDetailText);
+            detailText.setVisibility(overlayExpanded && !lastDetailText.trim().isEmpty() ? View.VISIBLE : View.GONE);
         }
+        if (transientCallText != null) transientCallText.setVisibility(View.GONE);
         if (expandButton != null) {
             expandButton.setText(overlayExpanded ? "▴" : "▾");
             expandButton.setContentDescription(overlayExpanded ? "JARVIS einklappen" : "JARVIS aufklappen");
         }
+        updateHeaderStatus();
+
         if (overlay != null && windowManager != null && overlayParams != null) {
             windowManager.updateViewLayout(overlay, overlayParams);
+        }
+    }
+
+    private void showTransientCall(String text) {
+        if (transientCallText == null || overlayExpanded) return;
+        transientCallText.setText(text);
+        transientCallText.setVisibility(View.VISIBLE);
+        mainHandler.removeCallbacks(hideTransientCall);
+        mainHandler.postDelayed(hideTransientCall, 5000L);
+    }
+
+    private void showMoreMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add("Gedächtnis zurücksetzen");
+        menu.setOnMenuItemClickListener(item -> {
+            previousState = "";
+            lastDetailText = "";
+            if (detailText != null) detailText.setVisibility(View.GONE);
+            setCoachText("Gedächtnis zurückgesetzt");
+            return true;
+        });
+        menu.show();
+    }
+
+    private void updateHeaderStatus() {
+        if (coachText != null) {
+            String status = analyzing.get() ? "JARVIS …" : "JARVIS ✓";
+            coachText.setText(status);
+        }
+        if (autoButton != null) {
+            autoButton.setText(autoEnabled ? "AUTO ●" : "AUTO ○");
         }
     }
 
@@ -475,7 +562,7 @@ public class ScreenCaptureService extends Service {
     private void toggleAuto() {
         autoEnabled = !autoEnabled;
         mainHandler.removeCallbacks(autoTick);
-        if (autoButton != null) autoButton.setText(autoEnabled ? "AUTO " + intervalSeconds + "s" : "AUTO AUS");
+        updateHeaderStatus();
         if (autoEnabled) {
             analyzeCurrentFrame();
             mainHandler.postDelayed(autoTick, intervalSeconds * 1000L);
@@ -486,7 +573,24 @@ public class ScreenCaptureService extends Service {
         mainHandler.post(() -> {
             lastCoachText = text;
             if (overlay == null) createOverlayIfAllowed();
-            if (coachText != null) coachText.setText(text);
+            updateHeaderStatus();
+
+            if ("JARVIS bereit".equals(text)) {
+                return;
+            }
+            if ("Analysiere …".equals(text)) {
+                return;
+            }
+
+            lastDetailText = text;
+            if (overlayExpanded) {
+                if (detailText != null) {
+                    detailText.setText(text);
+                    detailText.setVisibility(View.VISIBLE);
+                }
+            } else {
+                showTransientCall(text);
+            }
         });
     }
 
@@ -533,6 +637,7 @@ public class ScreenCaptureService extends Service {
         autoEnabled = false;
         awaitingCleanFrame.set(false);
         mainHandler.removeCallbacks(autoTick);
+        mainHandler.removeCallbacks(hideTransientCall);
         instance = null;
         if (overlay != null && windowManager != null) {
             try { windowManager.removeView(overlay); } catch (Throwable ignored) {}
