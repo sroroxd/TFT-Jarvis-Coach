@@ -1,0 +1,62 @@
+name: Initialize JARVIS signing key (one time)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  bootstrap:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Generate and encrypt permanent Android signing key
+        env:
+          JARVIS_SIGNING_PASSWORD: ${{ secrets.JARVIS_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -f .github/signing/jarvis-release.p12.asc ]; then
+            echo "::error::A signing identity already exists. Never replace it: existing installations would no longer update."
+            exit 1
+          fi
+          if [ "${#JARVIS_SIGNING_PASSWORD}" -lt 32 ]; then
+            echo "::error::Create repository Actions secret JARVIS_SIGNING_PASSWORD with a random password of at least 32 characters."
+            exit 1
+          fi
+          keytool -genkeypair -noprompt \
+            -keystore "$RUNNER_TEMP/jarvis-release.p12" -storetype PKCS12 \
+            -alias jarvis-release -keyalg RSA -keysize 3072 -validity 10000 \
+            -dname "CN=TFT Jarvis Coach, OU=Android, O=Jarvis Coach, C=DE" \
+            -storepass "$JARVIS_SIGNING_PASSWORD" \
+            -keypass "$JARVIS_SIGNING_PASSWORD" >/dev/null
+          mkdir -p .github/signing
+          printf '%s' "$JARVIS_SIGNING_PASSWORD" | \
+            gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-fd 0 \
+              --cipher-algo AES256 --armor --symmetric \
+              --output .github/signing/jarvis-release.p12.asc "$RUNNER_TEMP/jarvis-release.p12"
+          keytool -list -v -keystore "$RUNNER_TEMP/jarvis-release.p12" \
+            -storetype PKCS12 -storepass "$JARVIS_SIGNING_PASSWORD" \
+            -alias jarvis-release | sed -n 's/.*SHA256: //p' | head -n 1 > .github/signing/cert-sha256.txt
+          if [ ! -s .github/signing/cert-sha256.txt ]; then
+            echo "::error::Could not record signing certificate fingerprint."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/signing/jarvis-release.p12.asc .github/signing/cert-sha256.txt
+          git commit -m "Initialize permanent encrypted JARVIS APK signing identity"
+          git push origin HEAD:main
+      - name: Trigger signed APK publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release-090.yml --ref main

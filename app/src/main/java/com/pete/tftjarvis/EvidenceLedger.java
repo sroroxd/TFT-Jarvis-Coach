@@ -160,10 +160,16 @@ final class EvidenceLedger {
         if (old != null && old.epoch == epoch) {
             boolean fresh = Math.abs(at - old.observedAt) <= FRESH_CONFLICT_MS;
             if (fresh && sameValue(old.value, value)) {
-                String promoted = strongerConfidence(old.confidence, confidence);
-                latest.put(key, new Evidence(key, value, Source.VERIFIED_AGREEMENT,
-                        "HOCH".equals(promoted) ? "HOCH" : "MITTEL",
-                        Math.max(at, old.observedAt), epoch));
+                // Repeated observations from one modality are not independent evidence.
+                // Only a local OCR + cloud vision agreement can be marked VERIFIED.
+                boolean independent = (old.source == Source.LOCAL_OCR && source == Source.CLOUD_VISION)
+                        || (old.source == Source.CLOUD_VISION && source == Source.LOCAL_OCR);
+                Source resolved = independent || old.source == Source.VERIFIED_AGREEMENT
+                        ? Source.VERIFIED_AGREEMENT : source;
+                String conf = independent ? strongerConfidence(old.confidence, confidence)
+                        : normalizeConfidence(confidence);
+                latest.put(key, new Evidence(key, value, resolved,
+                        conf, Math.max(at, old.observedAt), epoch));
                 return;
             }
 

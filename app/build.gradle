@@ -10,8 +10,28 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 29
-        versionName '0.8.2-header-hotfix'
+        versionCode 30
+        versionName '0.9.0-beta1'
+    }
+
+    signingConfigs {
+        stableRelease {
+            def keyPath = System.getenv('JARVIS_KEYSTORE_PATH')
+            def signingPassword = System.getenv('JARVIS_SIGNING_PASSWORD')
+            if (keyPath && signingPassword) {
+                storeFile file(keyPath)
+                storePassword signingPassword
+                keyAlias 'jarvis-release'
+                keyPassword signingPassword
+                storeType 'pkcs12'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.stableRelease
+        }
     }
 
     compileOptions {
@@ -24,4 +44,5 @@ android {
 dependencies {
     // Bundled on-device OCR: no network/model download required at runtime.
     implementation 'com.google.mlkit:text-recognition:16.0.1'
+    testImplementation 'junit:junit:4.13.2'
 }
