@@ -250,14 +250,14 @@ public class ScreenCaptureService extends Service {
                 }
 
                 if (expectedGeneration != stateGeneration.get()) {
-                    // RESET was pressed during the network request. Never resurrect old state.
-                    evidenceLedger.clear();
+                    // RESET already cleared match memory; don't erase evidence from
+                    // any newer observation or resurrect the old response.
                     smartFrameDetector.discardPendingAnalysis();
                     return;
                 }
                 if (FrameFreshnessGate.shouldDiscard(capturedAt, System.currentTimeMillis())) {
-                    // Don't offer decisions for a screenshot more than 20 seconds old.
-                    evidenceLedger.clear();
+                    // Only discard the obsolete response. Previously established
+                    // evidence belongs to the same match and must remain intact.
                     smartFrameDetector.discardPendingAnalysis();
                     setCoachText("Bildanalyse veraltet – warte auf aktuelles Spielbild");
                     return;
@@ -345,12 +345,17 @@ public class ScreenCaptureService extends Service {
                 publishCall(resultPhase, result.call, result.plan, result.priority, result.confidence,
                         resetNotice, manualRequest);
             } catch (GeminiClient.RateLimitException e) {
+                if (expectedGeneration != stateGeneration.get()) return;
                 smartFrameDetector.discardPendingAnalysis();
                 handleRateLimit(e.retryAfterSeconds, "Gemini");
             } catch (OpenAIClient.RateLimitException e) {
+                if (expectedGeneration != stateGeneration.get()) return;
                 smartFrameDetector.discardPendingAnalysis();
                 handleRateLimit(e.retryAfterSeconds, "OpenAI");
             } catch (Exception e) {
+                // A late cloud error from a reset match must not replace the
+                // visible status or rate limit state of the next match.
+                if (expectedGeneration != stateGeneration.get()) return;
                 smartFrameDetector.discardPendingAnalysis();
                 String msg = e.getMessage() == null ? "Analysefehler" : e.getMessage();
                 String lower = msg.toLowerCase(Locale.ROOT);
@@ -584,6 +589,9 @@ public class ScreenCaptureService extends Service {
             }
         } catch (Throwable e) {
             if (awaitingCleanFrame.compareAndSet(true, false)) {
+                // An interrupted image decode must not become the last analyzed
+                // baseline; allow Smart-Auto to retry on a new clean frame.
+                smartFrameDetector.discardPendingAnalysis();
                 analyzing.set(false);
                 restoreOverlay();
                 setCoachText("Bild konnte nicht gelesen werden");
