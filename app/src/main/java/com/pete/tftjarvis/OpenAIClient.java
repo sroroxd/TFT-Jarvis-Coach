@@ -69,8 +69,15 @@ public final class OpenAIClient {
                 5. Ziel-Comp oder Pivot-Richtung, soweit aus sicheren Informationen ableitbar.
                 6. Bevorzuge kurzfristige Stabilisierung, wenn deutliche Niederlagen die Siegchance stärker gefährden als weiteres Sparen.
 
+                Shop-Regel:
+                - Wenn mehrere Shop-Käufe gleichzeitig sinnvoll sind, nenne sie im selben call.
+                - Priorisiere nur Käufe, die Board, Pair/Upgrade, Synergie, Carry/Tank-Pfad oder zukünftigen Pivot konkret verbessern.
+                - Kaufe nicht automatisch jede brauchbare Einheit. Berücksichtige Goldschwellen und Econ.
+                - Wenn ein sichtbarer Shop-Champion bewusst NICHT gekauft werden sollte, erwähne ihn nur, wenn das Weglassen strategisch wichtig ist.
+                - Maximal drei unmittelbare Aktionen pro call, geordnet nach Priorität.
+
                 Ausgabe:
-                - call = eine unmittelbar ausführbare Aktion, maximal sieben deutsche Wörter.
+                - call = bis zu drei unmittelbar ausführbare Aktionen in einem Satz, maximal 16 deutsche Wörter.
                 - plan = strategischer Kurzplan mit Synergie-/Board-Richtung, Carry/Tank und nächstem Meilenstein, maximal 32 deutsche Wörter.
                 - state = sicher erkannter Match-Kurzstatus für die nächste Analyse, maximal 52 deutsche Wörter.
                 - Wenn keine konkrete Aktion sicher ableitbar ist: call = "Nicht sicher erkennbar".
@@ -78,7 +85,7 @@ public final class OpenAIClient {
                 - Keine Erklärtexte außerhalb des JSON.
 
                 Antworte NUR als kompaktes JSON-Objekt:
-                {"call":"maximal sieben deutsche Wörter","plan":"maximal 32 deutsche Wörter","state":"maximal 52 deutsche Wörter"}
+                {"call":"bis zu drei Aktionen, maximal 16 deutsche Wörter","plan":"maximal 32 deutsche Wörter","state":"maximal 52 deutsche Wörter"}
                 """;
 
         JSONObject body = new JSONObject();
@@ -117,13 +124,13 @@ public final class OpenAIClient {
 
         try {
             JSONObject parsed = new JSONObject(stripCodeFence(text));
-            String call = clampWords(parsed.optString("call", "Nicht sicher erkennbar"), 7);
+            String call = clampWords(parsed.optString("call", "Nicht sicher erkennbar"), 16);
             String plan = clampWords(parsed.optString("plan", ""), 32);
             String state = clampWords(parsed.optString("state", ""), 52);
             if (call.trim().isEmpty()) call = "Nicht sicher erkennbar";
             return new CoachResult(call, plan, state);
         } catch (Exception ignored) {
-            return new CoachResult(clampWords(text, 7), "", "");
+            return new CoachResult(clampWords(text, 16), "", "");
         }
     }
 
