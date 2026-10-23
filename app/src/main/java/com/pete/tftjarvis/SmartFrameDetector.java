@@ -40,6 +40,7 @@ final class SmartFrameDetector {
     private boolean retryAfterFailure;
     private int consecutiveFailures;
     private byte[] lastFailedFingerprint;
+    private long retryNotBefore;
 
     synchronized boolean shouldSample(long now) {
         return now - lastSampleAt >= SAMPLE_INTERVAL_MS;
@@ -81,6 +82,7 @@ final class SmartFrameDetector {
         }
 
         if (stableSince == 0L || now - stableSince < STABLE_FOR_MS) return false;
+        if (now < retryNotBefore) return false;
         long retryDelay = retryAfterFailure
                 ? MIN_CLOUD_INTERVAL_MS * Math.max(1, consecutiveFailures)
                 : MIN_CLOUD_INTERVAL_MS;
@@ -95,6 +97,7 @@ final class SmartFrameDetector {
                 consecutiveFailures = 0;
                 retryAfterFailure = false;
                 lastFailedFingerprint = null;
+                retryNotBefore = 0L;
             } else if (retryAfterFailure) {
                 retryAfterFailure = false;
                 pendingChange = false;
@@ -181,6 +184,7 @@ final class SmartFrameDetector {
         consecutiveFailures = 0;
         retryAfterFailure = false;
         lastFailedFingerprint = null;
+        retryNotBefore = 0L;
     }
 
     synchronized void discardPendingAnalysis() {
@@ -204,6 +208,17 @@ final class SmartFrameDetector {
         pendingChange = true;
     }
 
+    synchronized void deferRetryUntil(long notBefore) {
+        // If Smart-Auto fired just before a rate limit was applied, keep its
+        // bounded retry instead of silently consuming it without a screenshot.
+        if (lastFailedFingerprint != null
+                && consecutiveFailures > 0
+                && consecutiveFailures <= MAX_AUTO_RETRIES) {
+            retryAfterFailure = true;
+            retryNotBefore = Math.max(retryNotBefore, notBefore);
+        }
+    }
+
     synchronized void markCloudAttempt(long now) {
         lastCloudAt = now;
     }
@@ -219,6 +234,7 @@ final class SmartFrameDetector {
         consecutiveFailures = 0;
         retryAfterFailure = false;
         lastFailedFingerprint = null;
+        retryNotBefore = 0L;
     }
 
     private static byte[] fingerprint(Image image) {
