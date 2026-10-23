@@ -121,8 +121,7 @@ public final class GeminiClient {
     }
 
     private static String normalizeModel(String model) {
-        if (model == null) return DEFAULT_MODEL;
-        String m = model.trim();
+        String m = CredentialValidator.normalizeModel(model, DEFAULT_MODEL);
         if (!m.startsWith("gemini-")) return DEFAULT_MODEL;
         return m;
     }
@@ -136,13 +135,18 @@ public final class GeminiClient {
             String previousState,
             int readTimeoutMs
     ) throws Exception {
+        String safeApiKey = CredentialValidator.normalizeApiKey(apiKey);
+        if (safeApiKey.isEmpty()) {
+            throw new Exception(CredentialValidator.invalidKeyMessage(ConfigStore.PROVIDER_GEMINI));
+        }
+
         URL url = new URL("https://generativelanguage.googleapis.com/v1/interactions");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
         conn.setReadTimeout(readTimeoutMs);
         conn.setDoOutput(true);
-        conn.setRequestProperty("x-goog-api-key", apiKey);
+        conn.setRequestProperty("x-goog-api-key", safeApiKey);
         conn.setRequestProperty("Content-Type", "application/json");
 
         JSONObject body = new JSONObject();

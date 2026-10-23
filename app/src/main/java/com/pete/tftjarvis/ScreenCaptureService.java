@@ -128,8 +128,9 @@ public class ScreenCaptureService extends Service {
                 provider = ConfigStore.loadProvider(this);
             }
 
-            if (providedKey != null && !providedKey.trim().isEmpty()) apiKey = providedKey;
-            if (providedModel != null && !providedModel.trim().isEmpty()) model = providedModel;
+            String safeProvidedKey = CredentialValidator.normalizeApiKey(providedKey);
+            if (!safeProvidedKey.isEmpty()) apiKey = safeProvidedKey;
+            if (providedModel != null && !providedModel.trim().isEmpty()) model = providedModel.trim();
         } else {
             provider = ConfigStore.loadProvider(this);
         }
@@ -201,11 +202,10 @@ public class ScreenCaptureService extends Service {
             return;
         }
 
-        if (apiKey == null || apiKey.trim().isEmpty()) {
+        apiKey = CredentialValidator.normalizeApiKey(apiKey);
+        if (apiKey.isEmpty()) {
             analyzing.set(false);
-            setCoachText(ConfigStore.PROVIDER_GEMINI.equals(provider)
-                    ? "Gemini API-Key fehlt"
-                    : "OpenAI API-Key fehlt");
+            setCoachText(CredentialValidator.invalidKeyMessage(provider));
             return;
         }
 
@@ -340,11 +340,16 @@ public class ScreenCaptureService extends Service {
                         || lower.contains("temporarily")
                         || lower.contains("unavailable")
                         || lower.contains("overloaded");
+                boolean badHeader = lower.contains("unexpected char")
+                        || lower.contains("header value")
+                        || lower.contains("invalid header");
                 boolean malformed = lower.contains("unterminated")
                         || lower.contains("end of input")
                         || lower.contains("unvollständig")
                         || lower.contains("malformed");
-                if (malformed) {
+                if (badHeader) {
+                    setCoachText(CredentialValidator.invalidKeyMessage(provider));
+                } else if (malformed) {
                     setCoachText("KI-Antwort unvollständig – erneut beim nächsten stabilen Bild");
                 } else if (transientCloud) {
                     // Do not immediately hammer the free endpoint again and do not imply

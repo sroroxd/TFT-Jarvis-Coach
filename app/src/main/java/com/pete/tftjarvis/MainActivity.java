@@ -146,22 +146,26 @@ public class MainActivity extends Activity {
 
     private void startCoachingFlow() {
         String provider = selectedProvider();
-        String apiKey = apiKeyInput.getText().toString().trim();
+        String rawApiKey = apiKeyInput.getText().toString();
+        String apiKey = CredentialValidator.normalizeApiKey(rawApiKey);
 
         if (apiKey.isEmpty()) {
-            status(ConfigStore.PROVIDER_GEMINI.equals(provider)
-                    ? "Gemini API-Key fehlt"
-                    : "OpenAI API-Key fehlt");
+            status(rawApiKey == null || rawApiKey.trim().isEmpty()
+                    ? (ConfigStore.PROVIDER_GEMINI.equals(provider)
+                        ? "Gemini API-Key fehlt"
+                        : "OpenAI API-Key fehlt")
+                    : CredentialValidator.invalidKeyMessage(provider));
             return;
         }
 
-        String model = modelInput.getText().toString().trim();
-        if (model.isEmpty()) {
-            model = ConfigStore.PROVIDER_GEMINI.equals(provider)
-                    ? GeminiClient.DEFAULT_MODEL
-                    : "gpt-6-luna";
-            modelInput.setText(model);
-        }
+        String fallbackModel = ConfigStore.PROVIDER_GEMINI.equals(provider)
+                ? GeminiClient.DEFAULT_MODEL
+                : "gpt-6-luna";
+        String model = CredentialValidator.normalizeModel(
+                modelInput.getText().toString(),
+                fallbackModel
+        );
+        modelInput.setText(model);
 
         ConfigStore.saveProvider(this, provider);
         if (ConfigStore.PROVIDER_GEMINI.equals(provider)) {
@@ -212,14 +216,19 @@ public class MainActivity extends Activity {
             service.putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode);
             service.putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data);
             service.putExtra(ScreenCaptureService.EXTRA_PROVIDER, provider);
-            service.putExtra(
-                    ScreenCaptureService.EXTRA_API_KEY,
-                    apiKeyInput.getText().toString().trim()
+            String safeKey = CredentialValidator.normalizeApiKey(apiKeyInput.getText().toString());
+            String safeModel = CredentialValidator.normalizeModel(
+                    modelInput.getText().toString(),
+                    ConfigStore.PROVIDER_GEMINI.equals(provider)
+                            ? GeminiClient.DEFAULT_MODEL
+                            : "gpt-6-luna"
             );
-            service.putExtra(
-                    ScreenCaptureService.EXTRA_MODEL,
-                    modelInput.getText().toString().trim()
-            );
+            if (safeKey.isEmpty()) {
+                status(CredentialValidator.invalidKeyMessage(provider));
+                return;
+            }
+            service.putExtra(ScreenCaptureService.EXTRA_API_KEY, safeKey);
+            service.putExtra(ScreenCaptureService.EXTRA_MODEL, safeModel);
 
             startForegroundService(service);
             status(

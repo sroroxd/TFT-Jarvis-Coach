@@ -33,35 +33,39 @@ public final class ConfigStore {
     // Backward-compatible OpenAI storage.
     public static void save(Context context, String apiKey, String model) {
         SharedPreferences.Editor e = prefs(context).edit();
-        e.putString(P_MODEL, model);
+        e.putString(P_MODEL, CredentialValidator.normalizeModel(model, "gpt-6-luna"));
         writeEncrypted(e, P_API, apiKey);
         e.apply();
     }
 
     public static String loadApiKey(Context context) {
-        return readEncrypted(context, P_API);
+        return CredentialValidator.normalizeApiKey(readEncrypted(context, P_API));
     }
 
     public static String loadModel(Context context) {
-        return prefs(context).getString(P_MODEL, "gpt-6-luna");
+        return CredentialValidator.normalizeModel(
+                prefs(context).getString(P_MODEL, "gpt-6-luna"),
+                "gpt-6-luna"
+        );
     }
 
     public static void saveGemini(Context context, String apiKey, String model) {
         SharedPreferences.Editor e = prefs(context).edit();
         e.putString(P_GEMINI_MODEL,
-                model == null || model.trim().isEmpty()
-                        ? GeminiClient.DEFAULT_MODEL
-                        : model.trim());
+                CredentialValidator.normalizeModel(model, GeminiClient.DEFAULT_MODEL));
         writeEncrypted(e, P_GEMINI_API, apiKey);
         e.apply();
     }
 
     public static String loadGeminiApiKey(Context context) {
-        return readEncrypted(context, P_GEMINI_API);
+        return CredentialValidator.normalizeApiKey(readEncrypted(context, P_GEMINI_API));
     }
 
     public static String loadGeminiModel(Context context) {
-        return prefs(context).getString(P_GEMINI_MODEL, GeminiClient.DEFAULT_MODEL);
+        return CredentialValidator.normalizeModel(
+                prefs(context).getString(P_GEMINI_MODEL, GeminiClient.DEFAULT_MODEL),
+                GeminiClient.DEFAULT_MODEL
+        );
     }
 
     public static void saveProvider(Context context, String provider) {
@@ -101,9 +105,10 @@ public final class ConfigStore {
             String prefKey,
             String value
     ) {
-        if (value != null && !value.trim().isEmpty()) {
+        String normalized = CredentialValidator.normalizeApiKey(value);
+        if (!normalized.isEmpty()) {
             try {
-                editor.putString(prefKey, encrypt(value.trim()));
+                editor.putString(prefKey, encrypt(normalized));
             } catch (Exception ignored) {
                 // Never fall back to plaintext storage for API keys.
             }
