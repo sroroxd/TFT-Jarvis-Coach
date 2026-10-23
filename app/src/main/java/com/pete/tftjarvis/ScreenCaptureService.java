@@ -258,6 +258,9 @@ public class ScreenCaptureService extends Service {
             // Ignore the timeout from an earlier, already completed capture.
             if (captureSequence.get() != captureId) return;
             if (awaitingCleanFrame.compareAndSet(true, false)) {
+                // The async clean-frame capture failed to start: don't consume
+                // a bounded failed-cloud retry without actually capturing it.
+                smartFrameDetector.deferRetryUntil(System.currentTimeMillis() + 1_000L);
                 finishAnalysis();
                 restoreOverlay();
                 setCoachText("Kein aktuelles Spielbild verfügbar");
