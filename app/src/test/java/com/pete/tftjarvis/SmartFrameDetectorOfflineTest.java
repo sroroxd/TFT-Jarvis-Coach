@@ -88,6 +88,22 @@ public class SmartFrameDetectorOfflineTest {
         assertTrue(detector.observeFingerprint(frame(170), 39400L, "VOR_MATCH"));
     }
 
+    @Test public void rateLimitDefersButDoesNotConsumeRetry() {
+        SmartFrameDetector detector = withAnalyzedLobby();
+        byte[] image = frame(50);
+        detector.markAnalyzedFingerprint(image, 9000L);
+        detector.discardPendingAnalysis(9300L);
+        detector.deferRetryUntil(30_000L);
+
+        assertFalse(detector.observeFingerprint(image, 9900L, "VOR_MATCH"));
+        assertFalse(detector.observeFingerprint(image, 20_000L, "VOR_MATCH"));
+        assertFalse(detector.observeFingerprint(image, 29_000L, "VOR_MATCH"));
+        assertTrue(detector.observeFingerprint(image, 30_100L, "VOR_MATCH"));
+        detector.markAnalyzedFingerprint(image, 30_200L);
+        detector.commitAnalyzed(30_300L);
+        assertFalse(detector.observeFingerprint(image, 40_000L, "VOR_MATCH"));
+    }
+
     @Test public void successfulRetryResetsErrorBackoff() {
         SmartFrameDetector detector = withAnalyzedLobby();
         detector.markAnalyzedFingerprint(frame(50), 9000L);
