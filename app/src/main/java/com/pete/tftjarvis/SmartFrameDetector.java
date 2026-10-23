@@ -24,12 +24,16 @@ final class SmartFrameDetector {
     private static final double BOTTOM_CHANGE_MIN = 0.080;
     private static final double CENTER_CHANGE_MIN = 0.120;
     private static final double AFTER_COMBAT_CHANGE_MIN = 0.055;
+    private static final double PENDING_FULL_CHANGE_MIN = 0.035;
+    private static final double PENDING_BOTTOM_CHANGE_MIN = 0.030;
+    private static final double PENDING_CENTER_CHANGE_MIN = 0.040;
 
     private byte[] previous;
     private byte[] lastAnalyzed;
     private long lastSampleAt;
     private long stableSince;
     private long lastCloudAt;
+    private boolean pendingChange;
 
     synchronized boolean shouldSample(long now) {
         return now - lastSampleAt >= SAMPLE_INTERVAL_MS;
@@ -54,6 +58,10 @@ final class SmartFrameDetector {
         if (motion <= STABLE_MOTION_MAX) {
             if (stableSince == 0L) stableSince = now;
         } else {
+            // Remember that something changed, but do not upload while the screen is moving.
+            // We wait until it settles and then verify that the final stable frame differs
+            // meaningfully from the last analyzed state.
+            pendingChange = true;
             stableSince = 0L;
             return false;
         }
@@ -70,13 +78,34 @@ final class SmartFrameDetector {
         double bottom = diff(lastAnalyzed, current, (int) (GRID_Y * 0.64), GRID_Y);
         double center = diff(lastAnalyzed, current, (int) (GRID_Y * 0.18), (int) (GRID_Y * 0.82));
 
+        boolean meaningful;
         if ("KAMPF".equals(lastPhase)) {
-            return full >= AFTER_COMBAT_CHANGE_MIN;
+            meaningful = full >= AFTER_COMBAT_CHANGE_MIN;
+        } else if ("AUGMENTIERUNG".equals(lastPhase) || "KARUSSELL".equals(lastPhase)) {
+            meaningful = full >= AFTER_COMBAT_CHANGE_MIN || center >= CENTER_CHANGE_MIN;
+        } else {
+            meaningful = full >= FULL_CHANGE_MIN
+                    || bottom >= BOTTOM_CHANGE_MIN
+                    || center >= CENTER_CHANGE_MIN;
         }
-        if ("AUGMENTIERUNG".equals(lastPhase) || "KARUSSELL".equals(lastPhase)) {
-            return full >= AFTER_COMBAT_CHANGE_MIN || center >= CENTER_CHANGE_MIN;
+
+        if (!meaningful && pendingChange) {
+            // A short animation/input may leave only a subtle persistent UI change.
+            // Use lower thresholds once, after the frame has settled. Pure transient
+            // motion that returns to the old frame is discarded instead of spamming cloud.
+            meaningful = full >= PENDING_FULL_CHANGE_MIN
+                    || bottom >= PENDING_BOTTOM_CHANGE_MIN
+                    || center >= PENDING_CENTER_CHANGE_MIN;
         }
-        return full >= FULL_CHANGE_MIN || bottom >= BOTTOM_CHANGE_MIN || center >= CENTER_CHANGE_MIN;
+
+        if (meaningful) {
+            pendingChange = false;
+            return true;
+        }
+
+        // The movement was transient and the final stable screen is effectively unchanged.
+        pendingChange = false;
+        return false;
     }
 
     synchronized void markAnalyzed(Image image, long now) {
@@ -87,6 +116,7 @@ final class SmartFrameDetector {
         }
         lastCloudAt = now;
         stableSince = now;
+        pendingChange = false;
     }
 
     synchronized void markCloudAttempt(long now) {
@@ -99,6 +129,7 @@ final class SmartFrameDetector {
         lastSampleAt = 0L;
         stableSince = 0L;
         lastCloudAt = 0L;
+        pendingChange = false;
     }
 
     private static byte[] fingerprint(Image image) {
