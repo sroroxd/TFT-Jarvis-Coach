@@ -250,13 +250,17 @@ public class ScreenCaptureService extends Service {
                     matchState.apply(result);
                 }
 
+                smartFrameDetector.commitAnalyzed(System.currentTimeMillis());
                 publishCall(result.phase, result.call, result.plan, result.priority, result.confidence,
                         showResetNotice, manualRequest);
             } catch (GeminiClient.RateLimitException e) {
+                smartFrameDetector.discardPendingAnalysis();
                 handleRateLimit(e.retryAfterSeconds, "Gemini");
             } catch (OpenAIClient.RateLimitException e) {
+                smartFrameDetector.discardPendingAnalysis();
                 handleRateLimit(e.retryAfterSeconds, "OpenAI");
             } catch (Exception e) {
+                smartFrameDetector.discardPendingAnalysis();
                 String msg = e.getMessage() == null ? "Analysefehler" : e.getMessage();
                 String lower = msg.toLowerCase(Locale.ROOT);
                 boolean transientCloud = lower.contains("503")
@@ -303,6 +307,7 @@ public class ScreenCaptureService extends Service {
             String shortCall = "[" + badge + "][" + phase + "] " + call;
             StringBuilder detail = new StringBuilder(shortCall);
             detail.append("\nSICHERHEIT: ").append(confidence);
+            detail.append("\n").append(matchState.debugSummary());
             if (matchState.primaryTrait != null && !matchState.primaryTrait.trim().isEmpty()) {
                 detail.append("\nKERN: ").append(matchState.primaryTrait.trim());
                 if (matchState.strategyEvidence >= 2) detail.append(" ✓");
@@ -545,7 +550,7 @@ public class ScreenCaptureService extends Service {
         detailText = new TextView(this);
         detailText.setTextColor(0xFFF4F4F4);
         detailText.setTextSize(11.5f);
-        detailText.setMaxLines(5);
+        detailText.setMaxLines(9);
         detailText.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.62f));
         detailText.setPadding(dp(7), dp(4), dp(7), dp(2));
         detailText.setVisibility(View.GONE);

@@ -30,6 +30,7 @@ final class SmartFrameDetector {
 
     private byte[] previous;
     private byte[] lastAnalyzed;
+    private byte[] pendingAnalyzed;
     private long lastSampleAt;
     private long stableSince;
     private long lastCloudAt;
@@ -108,15 +109,35 @@ final class SmartFrameDetector {
         return false;
     }
 
+    /**
+     * Queue the clean frame used for a cloud request. It becomes the new
+     * baseline only after the cloud analysis succeeds.
+     */
     synchronized void markAnalyzed(Image image, long now) {
         byte[] fp = fingerprint(image);
         if (fp != null) {
-            lastAnalyzed = fp;
+            pendingAnalyzed = fp;
             previous = fp;
         }
+        stableSince = now;
+        pendingChange = false;
+    }
+
+    synchronized void commitAnalyzed(long now) {
+        if (pendingAnalyzed != null) {
+            lastAnalyzed = pendingAnalyzed;
+            previous = pendingAnalyzed;
+        }
+        pendingAnalyzed = null;
         lastCloudAt = now;
         stableSince = now;
         pendingChange = false;
+    }
+
+    synchronized void discardPendingAnalysis() {
+        pendingAnalyzed = null;
+        stableSince = 0L;
+        pendingChange = true;
     }
 
     synchronized void markCloudAttempt(long now) {
@@ -126,6 +147,7 @@ final class SmartFrameDetector {
     synchronized void reset() {
         previous = null;
         lastAnalyzed = null;
+        pendingAnalyzed = null;
         lastSampleAt = 0L;
         stableSince = 0L;
         lastCloudAt = 0L;

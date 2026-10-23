@@ -220,6 +220,12 @@ public final class GeminiClient {
                 - Das aktuelle Bild ist die primäre Wahrheit und überschreibt widersprechenden alten Status.
                 - Nutze nur sicher sichtbare Fakten. Erfinde niemals Champions, Items, Augments, Attribute, Gold, Leben, Shop oder Gegnerdaten.
                 - Bei entscheidender Unsicherheit: call = "Nicht sicher erkennbar".
+                - AUGMENTIERUNG umfasst Augment-, Item-, Artefakt-, Amboss- und vergleichbare Auswahlfenster.
+                - ENTSCHEIDUNGSMODUS: Sobald mehrere sichtbare Optionen gewählt werden müssen, MUSST du konkret entscheiden.
+                  call beginnt dann exakt mit "NIMM: " und nennt den EXAKTEN sichtbaren Namen der besten Option.
+                  plan nennt knapp den konkreten Grund und, wenn sicher lesbar, die zweitbeste Alternative.
+                  Verboten sind Floskeln wie "nimm das beste", "wähle etwas Passendes", "je nach Team" oder das Zurückgeben der Entscheidung an den Spieler.
+                  Sind die Optionsnamen nicht sicher lesbar, call="Auswahl nicht sicher lesbar – erneut analysieren", priority=INFO, confidence=NIEDRIG.
                 - VOR_MATCH: nur Navigation; keine Matchstrategie erfinden. KAMPF: keine erfundenen Kauf-, Roll-, Level- oder Itemaktionen.
                 - Behandle das Match als fortlaufende Partie, NICHT als unabhängige Screenshots.
                 - Der vorherige Match-State enthält die bisherige strategische Richtung. Halte diese Richtung stabil,

@@ -27,9 +27,11 @@ final class TftRoiSelector {
         switch (phase) {
             case "SHOP":
             case "PLANUNG":
-                // Shop cards + stage/timer + upper board. Bench/gold remain visible in full frame.
-                return crop(source, 0.25f, 0.00f, 0.74f, 0.44f,
-                        "Shop/Planung – oberer Entscheidungsbereich");
+                // Broad decision ROI on purpose: the next frame may already be an augment,
+                // item/anvil or other choice screen while lastPhase still says PLANUNG/SHOP.
+                // This avoids sending a stale shop-only crop on the first critical choice frame.
+                return crop(source, 0.17f, 0.00f, 0.76f, 0.68f,
+                        "Planung/Shop/Auswahl – phasenwechsel-sicherer Entscheidungsbereich");
             case "AUGMENTIERUNG":
                 // Augment/item-choice cards are normally centered across the upper/middle screen.
                 return crop(source, 0.22f, 0.00f, 0.76f, 0.57f,
