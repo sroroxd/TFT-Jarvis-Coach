@@ -151,8 +151,14 @@ public class ScreenCaptureService extends Service {
         aiExecutor.execute(() -> {
             try {
                 OpenAIClient.CoachResult result = OpenAIClient.coach(apiKey, model, frame, previousState);
-                if (result.state != null && !result.state.trim().isEmpty()) previousState = result.state;
-                publishCall(result.call, result.plan);
+                StringBuilder memory = new StringBuilder();
+                if (result.state != null && !result.state.trim().isEmpty()) memory.append(result.state.trim());
+                if (result.plan != null && !result.plan.trim().isEmpty()) {
+                    if (memory.length() > 0) memory.append(" | ");
+                    memory.append("Letzter Plan: ").append(result.plan.trim());
+                }
+                if (memory.length() > 0) previousState = memory.toString();
+                publishCall(result.phase, result.call, result.plan);
             } catch (Exception e) {
                 String msg = e.getMessage() == null ? "Analysefehler" : e.getMessage();
                 if (msg.length() > 95) msg = msg.substring(0, 95) + "…";
@@ -163,11 +169,11 @@ public class ScreenCaptureService extends Service {
         });
     }
 
-    private void publishCall(String call, String plan) {
+    private void publishCall(String phase, String call, String plan) {
         mainHandler.post(() -> {
-            String display = call;
+            String display = "[" + phase + "] " + call;
             if (plan != null && !plan.trim().isEmpty()) {
-                display = call + "\nPLAN: " + plan;
+                display = display + "\nPLAN: " + plan;
             }
             setCoachText(display);
             if (tts != null) tts.speak(call, TextToSpeech.QUEUE_FLUSH, null, "tft-call");
