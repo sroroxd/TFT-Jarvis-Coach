@@ -96,7 +96,7 @@ public final class OpenAIClient {
         JSONObject body = new JSONObject();
         body.put("model", model == null || model.trim().isEmpty() ? "gpt-6-luna" : model);
         body.put("store", false);
-        body.put("max_output_tokens", 600);
+        body.put("max_output_tokens", 320);
 
         JSONArray content = new JSONArray();
         content.put(new JSONObject().put("type", "input_text").put("text",
@@ -105,7 +105,7 @@ public final class OpenAIClient {
         content.put(new JSONObject()
                 .put("type", "input_image")
                 .put("image_url", "data:image/jpeg;base64," + base64Jpeg)
-                .put("detail", "high"));
+                .put("detail", "auto"));
 
         JSONArray input = new JSONArray();
         input.put(new JSONObject().put("role", "user").put("content", content));
