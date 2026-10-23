@@ -10,6 +10,8 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class OpenAIClient {
     public static final class CoachResult {
@@ -20,9 +22,23 @@ public final class OpenAIClient {
         public final boolean newMatch;
         public final String priority;
         public final String confidence;
+        public final int level;
+        public final int gold;
+        public final int health;
+        public final List<String> board;
+        public final List<String> bench;
+        public final List<String> items;
+        public final List<String> augments;
+        public final List<String> traits;
+        public final String carry;
+        public final String tank;
 
         CoachResult(String phase, String call, String plan, String state, boolean newMatch,
-                    String priority, String confidence) {
+                    String priority, String confidence,
+                    int level, int gold, int health,
+                    List<String> board, List<String> bench, List<String> items,
+                    List<String> augments, List<String> traits,
+                    String carry, String tank) {
             this.phase = phase;
             this.call = call;
             this.plan = plan;
@@ -30,6 +46,16 @@ public final class OpenAIClient {
             this.newMatch = newMatch;
             this.priority = priority;
             this.confidence = confidence;
+            this.level = level;
+            this.gold = gold;
+            this.health = health;
+            this.board = board;
+            this.bench = bench;
+            this.items = items;
+            this.augments = augments;
+            this.traits = traits;
+            this.carry = carry;
+            this.tank = tank;
         }
     }
 
@@ -73,6 +99,11 @@ public final class OpenAIClient {
                 - Karussell: Item priorisieren; Champion nur nennen, wenn sicher erkennbar.
                 - new_match nur true, wenn ein frisch gestartetes Match gegenüber dem vorherigen Kurzstatus eindeutig erkennbar ist; bei Zweifel false.
                 - state enthält nur sicher erkannte, für die nächste Entscheidung relevante Match-Fakten.
+                - Strukturierte Beobachtungen:
+                  level, gold, health: nur wenn sicher sichtbar, sonst -1.
+                  board, bench, items, augments, traits: nur sicher erkannte Namen; unbekannt = [].
+                  carry und tank: nur wenn sicher ableitbar, sonst leerer String.
+                  Diese Felder beschreiben ausschließlich den AKTUELLEN Screenshot, nicht geratenen alten Kontext.
                 - priority:
                   KRITISCH = Entscheidung muss jetzt oder in wenigen Sekunden erfolgen; Verzögerung kann die Runde/Option kosten.
                   WICHTIG = strategisch relevant für die nächsten Schritte, aber nicht sofort zeitkritisch.
@@ -88,7 +119,7 @@ public final class OpenAIClient {
         JSONObject body = new JSONObject();
         body.put("model", model == null || model.trim().isEmpty() ? "gpt-6-luna" : model);
         body.put("store", false);
-        body.put("max_output_tokens", 128);
+        body.put("max_output_tokens", 320);
         body.put("reasoning", new JSONObject().put("effort", "none"));
 
         JSONObject properties = new JSONObject();
@@ -107,13 +138,29 @@ public final class OpenAIClient {
         properties.put("confidence", new JSONObject()
                 .put("type", "string")
                 .put("enum", new JSONArray().put("HOCH").put("MITTEL").put("NIEDRIG")));
+        properties.put("level", new JSONObject().put("type", "integer"));
+        properties.put("gold", new JSONObject().put("type", "integer"));
+        properties.put("health", new JSONObject().put("type", "integer"));
+        JSONObject stringArray = new JSONObject()
+                .put("type", "array")
+                .put("items", new JSONObject().put("type", "string"));
+        properties.put("board", stringArray);
+        properties.put("bench", new JSONObject(stringArray.toString()));
+        properties.put("items", new JSONObject(stringArray.toString()));
+        properties.put("augments", new JSONObject(stringArray.toString()));
+        properties.put("traits", new JSONObject(stringArray.toString()));
+        properties.put("carry", new JSONObject().put("type", "string"));
+        properties.put("tank", new JSONObject().put("type", "string"));
 
         JSONObject schema = new JSONObject()
                 .put("type", "object")
                 .put("properties", properties)
                 .put("required", new JSONArray()
                         .put("phase").put("call").put("plan").put("state").put("new_match")
-                        .put("priority").put("confidence"))
+                        .put("priority").put("confidence")
+                        .put("level").put("gold").put("health")
+                        .put("board").put("bench").put("items").put("augments").put("traits")
+                        .put("carry").put("tank"))
                 .put("additionalProperties", false);
 
         body.put("text", new JSONObject().put("format", new JSONObject()
@@ -164,6 +211,16 @@ public final class OpenAIClient {
             boolean newMatch = parsed.optBoolean("new_match", false);
             String priority = normalizePriority(parsed.optString("priority", "INFO"));
             String confidence = normalizeConfidence(parsed.optString("confidence", "NIEDRIG"));
+            int level = parsed.optInt("level", -1);
+            int gold = parsed.optInt("gold", -1);
+            int health = parsed.optInt("health", -1);
+            List<String> board = jsonStringList(parsed.optJSONArray("board"));
+            List<String> bench = jsonStringList(parsed.optJSONArray("bench"));
+            List<String> items = jsonStringList(parsed.optJSONArray("items"));
+            List<String> augments = jsonStringList(parsed.optJSONArray("augments"));
+            List<String> traits = jsonStringList(parsed.optJSONArray("traits"));
+            String carry = parsed.optString("carry", "").trim();
+            String tank = parsed.optString("tank", "").trim();
             if (call.trim().isEmpty()) call = "Nicht sicher erkennbar";
             if ("Nicht sicher erkennbar".equalsIgnoreCase(call.trim())) {
                 priority = "INFO";
@@ -173,10 +230,24 @@ public final class OpenAIClient {
                 call = "Warte auf Planungsphase";
                 priority = "INFO";
             }
-            return new CoachResult(phase, call, plan, state, newMatch, priority, confidence);
+            return new CoachResult(phase, call, plan, state, newMatch, priority, confidence,
+                    level, gold, health, board, bench, items, augments, traits, carry, tank);
         } catch (Exception ignored) {
-            return new CoachResult("UNKLAR", clampWords(text, 16), "", "", false, "INFO", "NIEDRIG");
+            return new CoachResult("UNKLAR", clampWords(text, 16), "", "", false, "INFO", "NIEDRIG",
+                    -1, -1, -1,
+                    new ArrayList<>(), new ArrayList<>(), new ArrayList<>(),
+                    new ArrayList<>(), new ArrayList<>(), "", "");
         }
+    }
+
+    private static List<String> jsonStringList(JSONArray array) {
+        List<String> out = new ArrayList<>();
+        if (array == null) return out;
+        for (int i = 0; i < array.length() && out.size() < 12; i++) {
+            String value = array.optString(i, "").trim();
+            if (!value.isEmpty()) out.add(value);
+        }
+        return out;
     }
 
     private static String extractOutputText(String raw) throws Exception {
