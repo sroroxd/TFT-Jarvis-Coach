@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 4
-        versionName '0.4.0-strategy'
+        versionCode 5
+        versionName '0.4.1-strategy'
     }
 
     compileOptions {
