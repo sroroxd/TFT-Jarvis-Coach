@@ -228,7 +228,10 @@ public class ScreenCaptureService extends Service {
             lastDetailText = detail.toString();
             updateHeaderStatus();
             showTransientCall(shortCall);
-            if (detailText != null) detailText.setText(lastDetailText);
+            if (detailText != null) {
+                detailText.setText(lastDetailText);
+                if (overlayExpanded) detailText.setVisibility(View.VISIBLE);
+            }
 
             if (tts != null) tts.speak(call, TextToSpeech.QUEUE_FLUSH, null, "tft-call");
             NotificationManager nm = getSystemService(NotificationManager.class);
@@ -491,7 +494,7 @@ public class ScreenCaptureService extends Service {
             previousState = "";
             lastDetailText = "";
             if (detailText != null) detailText.setVisibility(View.GONE);
-            showTransientCall("Gedächtnis zurückgesetzt");
+            setCoachText("Gedächtnis zurückgesetzt");
             return true;
         });
         menu.show();
