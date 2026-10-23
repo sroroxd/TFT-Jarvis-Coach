@@ -212,8 +212,7 @@ public final class GeminiClient {
             throw new ApiException(code, retryAfter, retryable, message);
         }
 
-        String text = extractOutputText(raw);
-        if (text.trim().isEmpty()) throw new Exception("Gemini: keine Textantwort");
+        String text = readValidatedOutputText(raw);
 
         try {
             return parseCoachJson(text);
@@ -415,6 +414,18 @@ public final class GeminiClient {
             if (!value.isEmpty()) out.add(value);
         }
         return out;
+    }
+
+    // Reject truncated/malformed HTTP envelopes with a predictable retryable
+    // parser failure, rather than leaking untrusted transport diagnostics.
+    static String readValidatedOutputText(String raw) throws Exception {
+        try {
+            String text = extractOutputText(raw);
+            if (text == null || text.trim().isEmpty()) throw new MalformedResponseException();
+            return text;
+        } catch (Exception error) {
+            throw new MalformedResponseException();
+        }
     }
 
     private static String extractOutputText(String raw) throws Exception {
