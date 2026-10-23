@@ -90,6 +90,7 @@ public final class GeminiClient {
 
         JSONObject body = new JSONObject();
         body.put("model", model);
+        body.put("store", false);
 
         JSONArray input = new JSONArray();
         input.put(new JSONObject()
@@ -109,7 +110,7 @@ public final class GeminiClient {
         String thinking = FALLBACK_MODEL.equals(model) ? "minimal" : "low";
         body.put("generation_config", new JSONObject()
                 .put("thinking_level", thinking)
-                .put("max_output_tokens", 1024));
+                .put("max_output_tokens", 256));
 
         byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
         try (OutputStream os = conn.getOutputStream()) {
@@ -117,9 +118,10 @@ public final class GeminiClient {
         }
 
         int code = conn.getResponseCode();
-        int retryAfter = parseRetryAfterSeconds(conn.getHeaderField("Retry-After"));
+        String retryAfterHeader = conn.getHeaderField("Retry-After");
         InputStream stream = code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream();
         String raw = readAll(stream);
+        int retryAfter = parseRetryAfterSeconds(retryAfterHeader, raw);
         conn.disconnect();
 
         if (code < 200 || code >= 300) {
@@ -304,14 +306,34 @@ public final class GeminiClient {
         return sb.toString();
     }
 
-    private static int parseRetryAfterSeconds(String value) {
-        if (value == null || value.trim().isEmpty()) return 60;
-        try {
-            double seconds = Double.parseDouble(value.trim());
-            return Math.max(1, (int) Math.ceil(seconds));
-        } catch (Exception ignored) {
-            return 60;
+    private static int parseRetryAfterSeconds(String value, String raw) {
+        if (value != null && !value.trim().isEmpty()) {
+            try {
+                double seconds = Double.parseDouble(value.trim());
+                return Math.max(1, (int) Math.ceil(seconds));
+            } catch (Exception ignored) {}
         }
+
+        try {
+            JSONObject root = new JSONObject(raw);
+            JSONObject err = root.optJSONObject("error");
+            JSONArray details = err == null ? null : err.optJSONArray("details");
+            if (details != null) {
+                for (int i = 0; i < details.length(); i++) {
+                    JSONObject detail = details.optJSONObject(i);
+                    if (detail == null) continue;
+                    String delay = detail.optString("retryDelay", "");
+                    if (delay.endsWith("s")) {
+                        double seconds = Double.parseDouble(
+                                delay.substring(0, delay.length() - 1)
+                        );
+                        return Math.max(1, (int) Math.ceil(seconds));
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        return 60;
     }
 
     private static String compactApiError(int code, String raw) {
