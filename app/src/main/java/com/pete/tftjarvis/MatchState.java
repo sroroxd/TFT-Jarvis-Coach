@@ -68,7 +68,9 @@ public final class MatchState {
         updateHealth(result.health, observationConfidence, now);
 
         String seenStage = cleanOrNull(result.stage);
-        if (seenStage != null && seenStage.matches("\\d+-\\d+")) stage = seenStage;
+        if (seenStage != null && seenStage.matches("\\d+-\\d+")) {
+            if (stage == null || compareStage(seenStage, stage) >= 0) stage = seenStage;
+        }
 
         updateList(result.board, board, observationConfidence);
         updateList(result.bench, bench, observationConfidence);
@@ -122,8 +124,10 @@ public final class MatchState {
             sb.append("Kern-Trait: ").append(primaryTrait).append('\n');
             sb.append("Bestätigungen: ").append(strategyEvidence).append('\n');
             sb.append("Strategie-Sicherheit: ").append(strategyConfidence).append('\n');
-            if (strategyEvidence >= 2) {
+            if (isStrategyEstablished()) {
                 sb.append("STATUS: KERNPLAN GEFESTIGT. Keine Off-Comp-Käufe ohne konkreten Upgrade-/Carry-/Tank-/Pivot-Grund.\n");
+            } else {
+                sb.append("STATUS: TENDENZ. Früh flexibel bleiben; Kern noch nicht hart festnageln.\n");
             }
         } else {
             sb.append("Kern-Trait: noch nicht sicher festgelegt.\n");
@@ -142,12 +146,12 @@ public final class MatchState {
 
     public synchronized String debugSummary() {
         StringBuilder sb = new StringBuilder("STATE:");
-        if (level != null) sb.append(" L").append(level).append("(").append(shortConfidence(levelConfidence)).append(")");
-        if (gold != null) sb.append(" G").append(gold).append("(").append(shortConfidence(goldConfidence)).append(")");
-        if (health != null) sb.append(" HP").append(health).append("(").append(shortConfidence(healthConfidence)).append(")");
+        if (level != null) sb.append(" L").append(level).append("(").append(shortConfidence(levelConfidence, levelObservedAt)).append(")");
+        if (gold != null) sb.append(" G").append(gold).append("(").append(shortConfidence(goldConfidence, goldObservedAt)).append(")");
+        if (health != null) sb.append(" HP").append(health).append("(").append(shortConfidence(healthConfidence, healthObservedAt)).append(")");
         if (stage != null) sb.append(" ").append(stage);
-        if (!traits.isEmpty()) sb.append(" T").append(traits.size());
-        if (!augments.isEmpty()) sb.append(" A").append(augments.size());
+        if (!traits.isEmpty()) sb.append("\nTRAITS: ").append(joinLimited(traits, 4));
+        if (!augments.isEmpty()) sb.append("\nAUGMENTS: ").append(joinLimited(augments, 3));
         if (sb.length() == 6) sb.append(" noch keine bestätigten HUD-Werte");
         return sb.toString();
     }
@@ -361,10 +365,58 @@ public final class MatchState {
         return "vor " + (sec / 60L) + "min";
     }
 
-    private static String shortConfidence(String value) {
+    private static String shortConfidence(String value, long observedAt) {
+        long age = observedAt <= 0L ? Long.MAX_VALUE : System.currentTimeMillis() - observedAt;
+        if (age > 45_000L) return "ALT";
+        if (age > 15_000L && "HOCH".equals(value)) return "M";
         if ("HOCH".equals(value)) return "H";
         if ("MITTEL".equals(value)) return "M";
         return "?";
+    }
+
+    public synchronized boolean isStrategyEstablished() {
+        return primaryTrait != null
+                && strategyEvidence >= 3
+                && stageMajor(stage) >= 3
+                && !"NIEDRIG".equals(strategyConfidence);
+    }
+
+    private static int compareStage(String a, String b) {
+        int am = stageMajor(a);
+        int bm = stageMajor(b);
+        if (am != bm) return Integer.compare(am, bm);
+        return Integer.compare(stageMinor(a), stageMinor(b));
+    }
+
+    private static int stageMajor(String s) {
+        try {
+            if (s == null) return -1;
+            int dash = s.indexOf('-');
+            return dash > 0 ? Integer.parseInt(s.substring(0, dash)) : -1;
+        } catch (Exception ignored) {
+            return -1;
+        }
+    }
+
+    private static int stageMinor(String s) {
+        try {
+            if (s == null) return -1;
+            int dash = s.indexOf('-');
+            return dash >= 0 && dash + 1 < s.length() ? Integer.parseInt(s.substring(dash + 1)) : -1;
+        } catch (Exception ignored) {
+            return -1;
+        }
+    }
+
+    private static String joinLimited(List<String> values, int max) {
+        StringBuilder sb = new StringBuilder();
+        int count = Math.min(max, values.size());
+        for (int i = 0; i < count; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(values.get(i));
+        }
+        if (values.size() > max) sb.append(" +").append(values.size() - max);
+        return sb.toString();
     }
 
     private static boolean sameText(String a, String b) {

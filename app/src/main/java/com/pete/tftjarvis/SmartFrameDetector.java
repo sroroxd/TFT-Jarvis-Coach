@@ -80,7 +80,10 @@ final class SmartFrameDetector {
         double center = diff(lastAnalyzed, current, (int) (GRID_Y * 0.18), (int) (GRID_Y * 0.82));
 
         boolean meaningful;
-        if ("KAMPF".equals(lastPhase)) {
+        if ("ERGEBNIS".equals(lastPhase) || "VOR_MATCH".equals(lastPhase)) {
+            // Ignore small result-screen animations, queue timers and rotating home banners.
+            meaningful = full >= 0.140 || center >= 0.160;
+        } else if ("KAMPF".equals(lastPhase)) {
             meaningful = full >= AFTER_COMBAT_CHANGE_MIN;
         } else if ("AUGMENTIERUNG".equals(lastPhase) || "KARUSSELL".equals(lastPhase)) {
             meaningful = full >= AFTER_COMBAT_CHANGE_MIN || center >= CENTER_CHANGE_MIN;
@@ -90,7 +93,9 @@ final class SmartFrameDetector {
                     || center >= CENTER_CHANGE_MIN;
         }
 
-        if (!meaningful && pendingChange) {
+        if (!meaningful && pendingChange
+                && !"ERGEBNIS".equals(lastPhase)
+                && !"VOR_MATCH".equals(lastPhase)) {
             // A short animation/input may leave only a subtle persistent UI change.
             // Use lower thresholds once, after the frame has settled. Pure transient
             // motion that returns to the old frame is discarded instead of spamming cloud.

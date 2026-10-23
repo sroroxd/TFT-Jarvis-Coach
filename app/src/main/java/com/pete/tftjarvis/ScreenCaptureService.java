@@ -63,6 +63,7 @@ public class ScreenCaptureService extends Service {
     private volatile boolean smartAutoEnabled = true;
     private volatile boolean currentAnalysisManual = false;
     private volatile String lastPhase = "UNKLAR";
+    private volatile boolean matchEndedLock = false;
     private String lastSpokenKey = "";
     private long lastSpokenAt = 0L;
 
@@ -235,24 +236,71 @@ public class ScreenCaptureService extends Service {
                     result = OpenAIClient.coach(
                             apiKey, model, frame, detailFrame, detailLabel, matchState.toPromptContext());
                 }
-                lastPhase = result.phase;
-
+                String resultPhase = result.phase;
                 boolean hadMatchMemory = matchState.hasMemory();
-                boolean resetByPreMatch = "VOR_MATCH".equals(result.phase);
+                boolean endScreen = "ERGEBNIS".equals(resultPhase)
+                        || ("VOR_MATCH".equals(resultPhase)
+                        && result.call != null
+                        && result.call.toLowerCase(Locale.ROOT).contains("spiel beendet"));
+                boolean clearlyNewMatch = result.newMatch || isEarlyMatchStage(result.stage);
+
+                // Low-confidence flicker must not kick a stable pre-match screen back to UNKLAR.
+                if ("UNKLAR".equals(resultPhase)
+                        && "NIEDRIG".equals(result.confidence)
+                        && "VOR_MATCH".equals(lastPhase)
+                        && !matchState.hasMemory()) {
+                    lastPhase = "VOR_MATCH";
+                    smartFrameDetector.commitAnalyzed(System.currentTimeMillis());
+                    publishCall("VOR_MATCH", "Warte auf Matchstart", "", "INFO", "MITTEL",
+                            null, manualRequest);
+                    return;
+                }
+
+                // Once an end screen has been confirmed, stale model context may not resurrect
+                // the old fight. Only lobby/queue or clear stage-1 evidence can unlock it.
+                if (matchEndedLock && !endScreen) {
+                    if ("VOR_MATCH".equals(resultPhase) || clearlyNewMatch) {
+                        matchEndedLock = false;
+                    } else {
+                        lastPhase = "ERGEBNIS";
+                        smartFrameDetector.commitAnalyzed(System.currentTimeMillis());
+                        publishCall("ERGEBNIS", "Spiel beendet", "Warte auf neue Spielsuche.",
+                                "INFO", "HOCH", null, manualRequest);
+                        return;
+                    }
+                }
+
+                if (endScreen) {
+                    matchEndedLock = true;
+                    lastPhase = "ERGEBNIS";
+                    if (hadMatchMemory) matchState.clear();
+                    smartFrameDetector.commitAnalyzed(System.currentTimeMillis());
+                    publishCall("ERGEBNIS", "Spiel beendet", "Ergebnis bestätigt; bereit für die nächste Partie.",
+                            "INFO", "HOCH",
+                            hadMatchMemory ? "MATCH: beendet – State zurückgesetzt" : "MATCH: beendet",
+                            manualRequest);
+                    return;
+                }
+
+                boolean resetByPreMatch = "VOR_MATCH".equals(resultPhase) && hadMatchMemory;
                 boolean resetByNewMatch = result.newMatch;
-                boolean showResetNotice = resetByNewMatch || (resetByPreMatch && hadMatchMemory);
+                String resetNotice = null;
 
                 if (resetByPreMatch || resetByNewMatch) {
                     matchState.clear();
+                    resetNotice = resetByNewMatch
+                            ? "MATCH: neuer Start"
+                            : "MATCH: voriger State zurückgesetzt";
                 }
 
-                if (!resetByPreMatch) {
+                lastPhase = resultPhase;
+                if (!"VOR_MATCH".equals(resultPhase)) {
                     matchState.apply(result);
                 }
 
                 smartFrameDetector.commitAnalyzed(System.currentTimeMillis());
-                publishCall(result.phase, result.call, result.plan, result.priority, result.confidence,
-                        showResetNotice, manualRequest);
+                publishCall(resultPhase, result.call, result.plan, result.priority, result.confidence,
+                        resetNotice, manualRequest);
             } catch (GeminiClient.RateLimitException e) {
                 smartFrameDetector.discardPendingAnalysis();
                 handleRateLimit(e.retryAfterSeconds, "Gemini");
@@ -269,7 +317,13 @@ public class ScreenCaptureService extends Service {
                         || lower.contains("temporarily")
                         || lower.contains("unavailable")
                         || lower.contains("overloaded");
-                if (transientCloud) {
+                boolean malformed = lower.contains("unterminated")
+                        || lower.contains("end of input")
+                        || lower.contains("unvollständig")
+                        || lower.contains("malformed");
+                if (malformed) {
+                    setCoachText("KI-Antwort unvollständig – erneut beim nächsten stabilen Bild");
+                } else if (transientCloud) {
                     // Do not immediately hammer the free endpoint again and do not imply
                     // that the strategic memory was lost. The next successful frame continues
                     // from the same MatchState.
@@ -301,16 +355,17 @@ public class ScreenCaptureService extends Service {
     }
 
     private void publishCall(String phase, String call, String plan, String priority,
-                             String confidence, boolean showResetNotice, boolean manualRequest) {
+                             String confidence, String resetNotice, boolean manualRequest) {
         mainHandler.post(() -> {
-            String badge = "KRITISCH".equals(priority) ? "!" : ("WICHTIG".equals(priority) ? "•" : "i");
+            String badge = "KRITISCH".equals(priority) ? "!" : ("WICHTIG".equals(priority) ? "*" : "i");
             String shortCall = "[" + badge + "][" + phase + "] " + call;
             StringBuilder detail = new StringBuilder(shortCall);
             detail.append("\nSICHERHEIT: ").append(confidence);
             detail.append("\n").append(matchState.debugSummary());
             if (matchState.primaryTrait != null && !matchState.primaryTrait.trim().isEmpty()) {
                 detail.append("\nKERN: ").append(matchState.primaryTrait.trim());
-                if (matchState.strategyEvidence >= 2) detail.append(" ✓");
+                if (matchState.isStrategyEstablished()) detail.append(" ✓");
+                else detail.append(" (Tendenz)");
             }
             if (matchState.compPlan != null && !matchState.compPlan.trim().isEmpty()) {
                 detail.append("\nCOMP: ").append(matchState.compPlan.trim());
@@ -318,8 +373,8 @@ public class ScreenCaptureService extends Service {
             if (plan != null && !plan.trim().isEmpty()) {
                 detail.append("\nNÄCHSTER SCHRITT: ").append(plan.trim());
             }
-            if (showResetNotice) {
-                detail.append("\nMATCH: neuer Kontext");
+            if (resetNotice != null && !resetNotice.trim().isEmpty()) {
+                detail.append("\n").append(resetNotice.trim());
             }
 
             lastCoachText = shortCall;
@@ -339,6 +394,10 @@ public class ScreenCaptureService extends Service {
         });
     }
 
+    private static boolean isEarlyMatchStage(String stage) {
+        return stage != null && stage.matches("1-\\d+");
+    }
+
     private boolean shouldSpeak(String phase, String call, String priority,
                                 String confidence, boolean manualRequest) {
         if (call == null || call.trim().isEmpty()) return false;
@@ -351,6 +410,7 @@ public class ScreenCaptureService extends Service {
                 || normalizedCall.contains("nicht sicher erkennbar")
                 || normalizedCall.contains("warte auf planungsphase")
                 || "VOR_MATCH".equals(phase)
+                || "ERGEBNIS".equals(phase)
                 || "INFO".equals(priority)
                 || "NIEDRIG".equals(confidence)) {
             return false;
@@ -665,6 +725,7 @@ public class ScreenCaptureService extends Service {
             if ("Gedächtnis zurücksetzen".equals(title)) {
                 matchState.clear();
                 lastPhase = "UNKLAR";
+                matchEndedLock = false;
                 lastDetailText = "";
                 lastSpokenKey = "";
                 lastSpokenAt = 0L;

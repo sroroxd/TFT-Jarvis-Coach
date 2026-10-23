@@ -31,6 +31,12 @@ public final class GeminiClient {
         }
     }
 
+    private static final class MalformedResponseException extends Exception {
+        MalformedResponseException() {
+            super("Gemini-Antwort unvollständig");
+        }
+    }
+
     private static final class ApiException extends Exception {
         final int httpCode;
         final int retryAfterSeconds;
@@ -75,6 +81,21 @@ public final class GeminiClient {
             try {
                 return call(FALLBACK_MODEL, apiKey, base64Jpeg, detailBase64Jpeg, detailLabel, previousState, FALLBACK_READ_TIMEOUT_MS);
             } catch (SocketTimeoutException secondTimeout) {
+                throw new Exception("Gemini antwortet gerade zu langsam – erneut versuchen");
+            } catch (ApiException second) {
+                if (second.httpCode == 429) throw new RateLimitException(second.retryAfterSeconds);
+                throw second;
+            }
+        } catch (MalformedResponseException malformed) {
+            if (FALLBACK_MODEL.equals(primary)) {
+                throw new Exception("Gemini-Antwort unvollständig – erneut versuchen");
+            }
+            try {
+                return call(FALLBACK_MODEL, apiKey, base64Jpeg, detailBase64Jpeg, detailLabel,
+                        previousState, FALLBACK_READ_TIMEOUT_MS);
+            } catch (MalformedResponseException secondMalformed) {
+                throw new Exception("Gemini-Antwort unvollständig – erneut versuchen");
+            } catch (SocketTimeoutException timeout) {
                 throw new Exception("Gemini antwortet gerade zu langsam – erneut versuchen");
             } catch (ApiException second) {
                 if (second.httpCode == 429) throw new RateLimitException(second.retryAfterSeconds);
@@ -168,7 +189,7 @@ public final class GeminiClient {
         String thinking = FALLBACK_MODEL.equals(model) ? "minimal" : "low";
         body.put("generation_config", new JSONObject()
                 .put("thinking_level", thinking)
-                .put("max_output_tokens", 320));
+                .put("max_output_tokens", 640));
 
         byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
         try (OutputStream os = conn.getOutputStream()) {
@@ -191,7 +212,11 @@ public final class GeminiClient {
         String text = extractOutputText(raw);
         if (text.trim().isEmpty()) throw new Exception("Gemini: keine Textantwort");
 
-        return parseCoachJson(text);
+        try {
+            return parseCoachJson(text);
+        } catch (Exception malformed) {
+            throw new MalformedResponseException();
+        }
     }
 
     private static String buildPrompt(String previousState) {
@@ -206,7 +231,7 @@ public final class GeminiClient {
                 Ziel: Maximiere in der aktuellen Lobby die realistische Chance auf Platz 1.
                 Nur wenn Platz 1 objektiv nicht mehr realistisch ist, sichere die bestmögliche Restplatzierung.
 
-                Erkenne eine Phase: VOR_MATCH, PLANUNG, SHOP, AUGMENTIERUNG, KARUSSELL, KAMPF oder UNKLAR.
+                Erkenne eine Phase: VOR_MATCH, PLANUNG, SHOP, AUGMENTIERUNG, KARUSSELL, KAMPF, ERGEBNIS oder UNKLAR.
 
                 Phasen-Erkennung:
                 - VOR_MATCH umfasst ausdrücklich den TFT-Homescreen/Lobby-Bildschirm vor einer Partie.
@@ -214,7 +239,11 @@ public final class GeminiClient {
                   FEEDBACK SENDEN, Patchnotizen, Battlepass oder Chibi-/Shop-Kacheln, ist phase=VOR_MATCH.
                 - Ein klar erkennbarer TFT-Homescreen ist NICHT UNKLAR, nur weil noch kein Board sichtbar ist.
                 - Auf dem Homescreen: call="TFT-Homescreen erkannt", priority=INFO, confidence=HOCH.
-                - UNKLAR nur verwenden, wenn weder TFT-Homescreen noch eine Matchphase sicher erkennbar ist.
+                - Warteschlange mit laufendem Such-Timer/Abbrechen-Schaltfläche: phase=VOR_MATCH, call="Warteschlange erkannt".
+                - Spieler-Karten/Ladefortschritt vor Matchbeginn: phase=VOR_MATCH, call="Ladebildschirm erkannt".
+                - Rangliste/Endergebnis mit Platzierungen und "ERNEUT SPIELEN": phase=ERGEBNIS,
+                  call="Spiel beendet", priority=INFO, confidence=HOCH. Das ist niemals KAMPF.
+                - UNKLAR nur verwenden, wenn weder TFT-Homescreen, Warteschlange, Ladebildschirm, Ergebnis noch eine Matchphase sicher erkennbar ist.
 
                 Harte Regeln:
                 - Das aktuelle Bild ist die primäre Wahrheit und überschreibt widersprechenden alten Status.
@@ -273,7 +302,7 @@ public final class GeminiClient {
                 .put("type", "string")
                 .put("enum", new JSONArray()
                         .put("VOR_MATCH").put("PLANUNG").put("SHOP")
-                        .put("AUGMENTIERUNG").put("KARUSSELL").put("KAMPF").put("UNKLAR")));
+                        .put("AUGMENTIERUNG").put("KARUSSELL").put("KAMPF").put("ERGEBNIS").put("UNKLAR")));
         properties.put("call", new JSONObject().put("type", "string"));
         properties.put("plan", new JSONObject().put("type", "string"));
         properties.put("state", new JSONObject().put("type", "string"));
@@ -406,6 +435,7 @@ public final class GeminiClient {
             case "AUGMENTIERUNG":
             case "KARUSSELL":
             case "KAMPF":
+            case "ERGEBNIS":
             case "UNKLAR":
                 return v;
             default:

@@ -112,7 +112,7 @@ public final class OpenAIClient {
                 Ziel: Maximiere in der aktuellen Lobby die realistische Chance auf Platz 1.
                 Falls Platz 1 objektiv nicht mehr realistisch ist, sichere die bestmögliche Restplatzierung.
 
-                Erkenne eine Phase: VOR_MATCH, PLANUNG, SHOP, AUGMENTIERUNG, KARUSSELL, KAMPF oder UNKLAR.
+                Erkenne eine Phase: VOR_MATCH, PLANUNG, SHOP, AUGMENTIERUNG, KARUSSELL, KAMPF, ERGEBNIS oder UNKLAR.
 
                 Regeln:
                 - Nutze nur sicher sichtbare Informationen aus dem aktuellen Screenshot plus den kurzen vorherigen Match-Status.
@@ -124,7 +124,10 @@ public final class OpenAIClient {
                   plan nennt knapp den konkreten Grund und, wenn sicher lesbar, die zweitbeste Alternative.
                   Verboten sind Floskeln wie "nimm das beste", "wähle etwas Passendes", "je nach Team" oder das Zurückgeben der Entscheidung an den Spieler.
                   Sind die Optionsnamen nicht sicher lesbar, call="Auswahl nicht sicher lesbar – erneut analysieren", priority=INFO, confidence=NIEDRIG.
-                - VOR_MATCH: nur Navigation. KAMPF: keine erfundenen Kauf-, Roll-, Level- oder Itemaktionen.
+                - VOR_MATCH: nur Navigation. Warteschlange bleibt VOR_MATCH; call="Warteschlange erkannt".
+                - Rangliste/Endergebnis mit Platzierungen und "ERNEUT SPIELEN": phase=ERGEBNIS,
+                  call="Spiel beendet", priority=INFO, confidence=HOCH. Das ist niemals KAMPF.
+                - KAMPF: keine erfundenen Kauf-, Roll-, Level- oder Itemaktionen.
                 - Behandle das Match als fortlaufende Partie, NICHT als unabhängige Screenshots.
                 - Der vorherige Match-State enthält die bisherige strategische Richtung. Halte diese Richtung stabil,
                   solange der aktuelle Screenshot keinen klaren Grund für einen Pivot zeigt.
@@ -165,7 +168,7 @@ public final class OpenAIClient {
         JSONObject body = new JSONObject();
         body.put("model", model == null || model.trim().isEmpty() ? "gpt-6-luna" : model);
         body.put("store", false);
-        body.put("max_output_tokens", 320);
+        body.put("max_output_tokens", 640);
         body.put("reasoning", new JSONObject().put("effort", "none"));
 
         JSONObject properties = new JSONObject();
@@ -173,7 +176,7 @@ public final class OpenAIClient {
                 .put("type", "string")
                 .put("enum", new JSONArray()
                         .put("VOR_MATCH").put("PLANUNG").put("SHOP")
-                        .put("AUGMENTIERUNG").put("KARUSSELL").put("KAMPF").put("UNKLAR")));
+                        .put("AUGMENTIERUNG").put("KARUSSELL").put("KAMPF").put("ERGEBNIS").put("UNKLAR")));
         properties.put("call", new JSONObject().put("type", "string"));
         properties.put("plan", new JSONObject().put("type", "string"));
         properties.put("state", new JSONObject().put("type", "string"));
@@ -310,7 +313,7 @@ public final class OpenAIClient {
                     level, gold, health, board, bench, items, augments, traits, carry, tank,
                     stage, primaryTrait, compPlan, strategyConfidence, pivotRecommended, pivotReason);
         } catch (Exception ignored) {
-            return new CoachResult("UNKLAR", clampWords(text, 16), "", "", false, "INFO", "NIEDRIG",
+            return new CoachResult("UNKLAR", "KI-Antwort unvollständig – erneut analysieren", "", "", false, "INFO", "NIEDRIG",
                     -1, -1, -1,
                     new ArrayList<>(), new ArrayList<>(), new ArrayList<>(),
                     new ArrayList<>(), new ArrayList<>(), "", "",
@@ -382,6 +385,7 @@ public final class OpenAIClient {
             case "AUGMENTIERUNG":
             case "KARUSSELL":
             case "KAMPF":
+            case "ERGEBNIS":
             case "UNKLAR":
                 return p;
             default:
