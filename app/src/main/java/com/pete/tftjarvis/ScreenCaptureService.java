@@ -58,6 +58,7 @@ public class ScreenCaptureService extends Service {
     private final AtomicBoolean awaitingCleanFrame = new AtomicBoolean(false);
     private final Handler mainHandler = new Handler();
     private final SmartFrameDetector smartFrameDetector = new SmartFrameDetector();
+    private final LocalHudPerception localHudPerception = new LocalHudPerception();
     private volatile long rateLimitedUntil = 0L;
     private volatile long lastAnalyzeTapAt = 0L;
     private volatile boolean smartAutoEnabled = true;
@@ -224,17 +225,23 @@ public class ScreenCaptureService extends Service {
         }, 2200L);
     }
 
-    private void runAnalysis(String frame, String detailFrame, String detailLabel) {
+    private void runAnalysis(String frame, String detailFrame, String detailLabel,
+                             LocalHudPerception.Observation localHud) {
         final boolean manualRequest = currentAnalysisManual;
         aiExecutor.execute(() -> {
             try {
+                String stateContext = matchState.toPromptContext();
+                if (localHud != null && localHud.hasAny()) {
+                    stateContext += localHud.toPromptContext();
+                }
+
                 OpenAIClient.CoachResult result;
                 if (ConfigStore.PROVIDER_GEMINI.equals(provider)) {
                     result = GeminiClient.coach(
-                            apiKey, model, frame, detailFrame, detailLabel, matchState.toPromptContext());
+                            apiKey, model, frame, detailFrame, detailLabel, stateContext);
                 } else {
                     result = OpenAIClient.coach(
-                            apiKey, model, frame, detailFrame, detailLabel, matchState.toPromptContext());
+                            apiKey, model, frame, detailFrame, detailLabel, stateContext);
                 }
                 String resultPhase = result.phase;
                 boolean hadMatchMemory = matchState.hasMemory();
@@ -242,7 +249,12 @@ public class ScreenCaptureService extends Service {
                         || ("VOR_MATCH".equals(resultPhase)
                         && result.call != null
                         && result.call.toLowerCase(Locale.ROOT).contains("spiel beendet"));
-                boolean clearlyNewMatch = result.newMatch || isEarlyMatchStage(result.stage);
+                String localStage = localHud != null && localHud.stage != null
+                        ? localHud.stage.value
+                        : null;
+                boolean clearlyNewMatch = result.newMatch
+                        || isEarlyMatchStage(result.stage)
+                        || isEarlyMatchStage(localStage);
 
                 // Low-confidence flicker must not kick a stable pre-match screen back to UNKLAR.
                 if ("UNKLAR".equals(resultPhase)
@@ -295,7 +307,7 @@ public class ScreenCaptureService extends Service {
 
                 lastPhase = resultPhase;
                 if (!"VOR_MATCH".equals(resultPhase)) {
-                    matchState.apply(result);
+                    matchState.apply(result, localHud);
                 }
 
                 smartFrameDetector.commitAnalyzed(System.currentTimeMillis());
@@ -510,6 +522,7 @@ public class ScreenCaptureService extends Service {
             );
             padded.copyPixelsFromBuffer(buffer);
             Bitmap cropped = Bitmap.createBitmap(padded, 0, 0, image.getWidth(), image.getHeight());
+            LocalHudPerception.Observation localHud = localHudPerception.observe(cropped, lastPhase);
             Bitmap upload = downscale(cropped, 1280);
             String cleanFrame = encodeJpeg(upload, 72);
 
@@ -530,7 +543,7 @@ public class ScreenCaptureService extends Service {
 
             if (awaitingCleanFrame.compareAndSet(true, false)) {
                 restoreOverlay();
-                runAnalysis(cleanFrame, detailFrame, detailLabel);
+                runAnalysis(cleanFrame, detailFrame, detailLabel, localHud);
             }
         } catch (Throwable e) {
             if (awaitingCleanFrame.compareAndSet(true, false)) {
@@ -879,6 +892,7 @@ public class ScreenCaptureService extends Service {
         if (mediaProjection != null) mediaProjection.stop();
         if (captureThread != null) captureThread.quitSafely();
         if (tts != null) tts.shutdown();
+        localHudPerception.close();
         aiExecutor.shutdownNow();
         super.onDestroy();
     }
