@@ -155,10 +155,32 @@ final class DecisionGate {
         for (String value : values) {
             if (value == null || value.trim().isEmpty()) continue;
             String needle = value.trim().toLowerCase(Locale.GERMAN);
-            if (haystack.contains(needle) && (best == null || value.length() > best.length())) {
+            // A short option/unit name must not validate a different, longer
+            // visible word (e.g. "Eis" in "Eisenrüstung").
+            if (containsWholeName(haystack, needle)
+                    && (best == null || value.length() > best.length())) {
                 best = value.trim();
             }
         }
         return best;
+    }
+
+    private static boolean containsWholeName(String haystack, String needle) {
+        int from = 0;
+        while (from < haystack.length()) {
+            int index = haystack.indexOf(needle, from);
+            if (index < 0) return false;
+            int right = index + needle.length();
+            boolean leftBoundary = index == 0 || !isNameCharacter(haystack.charAt(index - 1));
+            boolean rightBoundary = right == haystack.length()
+                    || !isNameCharacter(haystack.charAt(right));
+            if (leftBoundary && rightBoundary) return true;
+            from = index + 1;
+        }
+        return false;
+    }
+
+    private static boolean isNameCharacter(char c) {
+        return Character.isLetterOrDigit(c) || c == '-' || c == '_';
     }
 }
