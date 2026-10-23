@@ -47,7 +47,6 @@ public class ScreenCaptureService extends Service {
     public static final String EXTRA_RESULT_DATA = "resultData";
     public static final String EXTRA_API_KEY = "apiKey";
     public static final String EXTRA_MODEL = "model";
-    public static final String EXTRA_INTERVAL_SECONDS = "intervalSeconds";
 
     private static final String CHANNEL_ID = "tft_capture";
     private static final int NOTIFICATION_ID = 17;
@@ -61,8 +60,6 @@ public class ScreenCaptureService extends Service {
     private String apiKey = "";
     private String model = "gpt-6-luna";
     private String previousState = "";
-    private int intervalSeconds = 7;
-    private boolean autoEnabled;
 
     private MediaProjection mediaProjection;
     private VirtualDisplay virtualDisplay;
@@ -79,7 +76,6 @@ public class ScreenCaptureService extends Service {
     private TextView transientCallText;
     private TextView detailText;
     private TextView expandButton;
-    private TextView autoButton;
     private boolean overlayExpanded;
     private String lastCoachText = "JARVIS bereit";
     private String lastDetailText = "";
@@ -93,13 +89,6 @@ public class ScreenCaptureService extends Service {
         }
     };
 
-    private final Runnable autoTick = new Runnable() {
-        @Override public void run() {
-            if (!autoEnabled) return;
-            analyzeCurrentFrame();
-            mainHandler.postDelayed(this, intervalSeconds * 1000L);
-        }
-    };
 
     @Override
     public void onCreate() {
@@ -118,7 +107,6 @@ public class ScreenCaptureService extends Service {
             String providedModel = intent.getStringExtra(EXTRA_MODEL);
             if (providedKey != null && !providedKey.trim().isEmpty()) apiKey = providedKey;
             if (providedModel != null && !providedModel.trim().isEmpty()) model = providedModel;
-            intervalSeconds = Math.max(4, intent.getIntExtra(EXTRA_INTERVAL_SECONDS, 7));
         }
         if (apiKey.trim().isEmpty()) apiKey = ConfigStore.loadApiKey(this);
         if (model.trim().isEmpty()) model = ConfigStore.loadModel(this);
@@ -356,11 +344,6 @@ public class ScreenCaptureService extends Service {
         attachDragBehavior(coachText);
         header.addView(coachText);
 
-        autoButton = makeChip("AUTO ○");
-        autoButton.setTextSize(9.5f);
-        autoButton.setPadding(dp(7), dp(3), dp(7), dp(3));
-        autoButton.setOnClickListener(v -> toggleAuto());
-        header.addView(autoButton);
 
         expandButton = makeChip("▾");
         expandButton.setTextSize(10f);
@@ -505,9 +488,6 @@ public class ScreenCaptureService extends Service {
             String status = analyzing.get() ? "JARVIS …" : "JARVIS ✓";
             coachText.setText(status);
         }
-        if (autoButton != null) {
-            autoButton.setText(autoEnabled ? "AUTO ●" : "AUTO ○");
-        }
     }
 
     private void attachDragBehavior(View dragHandle) {
@@ -557,16 +537,6 @@ public class ScreenCaptureService extends Service {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
-    private void toggleAuto() {
-        autoEnabled = !autoEnabled;
-        mainHandler.removeCallbacks(autoTick);
-        updateHeaderStatus();
-        if (autoEnabled) {
-            analyzeCurrentFrame();
-            mainHandler.postDelayed(autoTick, intervalSeconds * 1000L);
-        }
     }
 
     private void setCoachText(String text) {
@@ -634,9 +604,7 @@ public class ScreenCaptureService extends Service {
 
     @Override
     public void onDestroy() {
-        autoEnabled = false;
         awaitingCleanFrame.set(false);
-        mainHandler.removeCallbacks(autoTick);
         mainHandler.removeCallbacks(hideTransientCall);
         instance = null;
         if (overlay != null && windowManager != null) {
