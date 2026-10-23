@@ -258,8 +258,26 @@ public class ScreenCaptureService extends Service {
                 handleRateLimit(e.retryAfterSeconds, "OpenAI");
             } catch (Exception e) {
                 String msg = e.getMessage() == null ? "Analysefehler" : e.getMessage();
-                if (msg.length() > 95) msg = msg.substring(0, 95) + "…";
-                setCoachText(msg);
+                String lower = msg.toLowerCase(Locale.ROOT);
+                boolean transientCloud = lower.contains("503")
+                        || lower.contains("high demand")
+                        || lower.contains("zu langsam")
+                        || lower.contains("temporarily")
+                        || lower.contains("unavailable")
+                        || lower.contains("overloaded");
+                if (transientCloud) {
+                    // Do not immediately hammer the free endpoint again and do not imply
+                    // that the strategic memory was lost. The next successful frame continues
+                    // from the same MatchState.
+                    rateLimitedUntil = Math.max(
+                            rateLimitedUntil,
+                            System.currentTimeMillis() + 20_000L
+                    );
+                    setCoachText("Gemini ausgelastet – Plan bleibt gespeichert");
+                } else {
+                    if (msg.length() > 95) msg = msg.substring(0, 95) + "…";
+                    setCoachText(msg);
+                }
             } finally {
                 analyzing.set(false);
             }
@@ -285,8 +303,15 @@ public class ScreenCaptureService extends Service {
             String shortCall = "[" + badge + "][" + phase + "] " + call;
             StringBuilder detail = new StringBuilder(shortCall);
             detail.append("\nSICHERHEIT: ").append(confidence);
+            if (matchState.primaryTrait != null && !matchState.primaryTrait.trim().isEmpty()) {
+                detail.append("\nKERN: ").append(matchState.primaryTrait.trim());
+                if (matchState.strategyEvidence >= 2) detail.append(" ✓");
+            }
+            if (matchState.compPlan != null && !matchState.compPlan.trim().isEmpty()) {
+                detail.append("\nCOMP: ").append(matchState.compPlan.trim());
+            }
             if (plan != null && !plan.trim().isEmpty()) {
-                detail.append("\nPLAN: ").append(plan.trim());
+                detail.append("\nNÄCHSTER SCHRITT: ").append(plan.trim());
             }
             if (showResetNotice) {
                 detail.append("\nMATCH: neuer Kontext");
