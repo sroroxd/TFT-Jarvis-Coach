@@ -109,7 +109,7 @@ public final class GeminiClient {
         String thinking = FALLBACK_MODEL.equals(model) ? "minimal" : "low";
         body.put("generation_config", new JSONObject()
                 .put("thinking_level", thinking)
-                .put("max_output_tokens", 512));
+                .put("max_output_tokens", 1024));
 
         byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
         try (OutputStream os = conn.getOutputStream()) {
