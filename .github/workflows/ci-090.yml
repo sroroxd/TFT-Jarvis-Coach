@@ -23,6 +23,30 @@ jobs:
         run: gradle --no-daemon testDebugUnitTest --stacktrace
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug --stacktrace
+      - name: Create throwaway signing identity for CI only
+        run: |
+          set -euo pipefail
+          TEMP_PASSWORD=$(openssl rand -hex 24)
+          keytool -genkeypair -noprompt \
+            -keystore "$RUNNER_TEMP/ci-release.p12" -storetype PKCS12 \
+            -alias jarvis-release -keyalg RSA -keysize 3072 -validity 2 \
+            -dname "CN=JARVIS CI ONLY, O=Automated Test, C=DE" \
+            -storepass "$TEMP_PASSWORD" -keypass "$TEMP_PASSWORD" >/dev/null
+          echo "JARVIS_KEYSTORE_PATH=$RUNNER_TEMP/ci-release.p12" >> "$GITHUB_ENV"
+          echo "JARVIS_SIGNING_PASSWORD=$TEMP_PASSWORD" >> "$GITHUB_ENV"
+      - name: Build and validate signed release APK (CI identity, never published)
+        run: |
+          set -euo pipefail
+          gradle --no-daemon assembleRelease --stacktrace
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+      - name: Ensure no plaintext signing keys are committed
+        run: |
+          if git ls-files '*.p12' '*.jks' '*.keystore' | grep .; then
+            echo "::error::Plaintext signing key tracked in Git!"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: JARVIS-0.9.0-beta1-debug
