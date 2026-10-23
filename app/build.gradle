@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 15
-        versionName '0.6.5-research-hotfix'
+        versionCode 16
+        versionName '0.6.6-smart-auto'
     }
 
     compileOptions {
