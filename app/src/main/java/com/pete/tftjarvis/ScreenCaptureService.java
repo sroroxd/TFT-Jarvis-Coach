@@ -56,8 +56,11 @@ public class ScreenCaptureService extends Service {
     private final AtomicBoolean analyzing = new AtomicBoolean(false);
     private final AtomicBoolean awaitingCleanFrame = new AtomicBoolean(false);
     private final Handler mainHandler = new Handler();
+    private final SmartFrameDetector smartFrameDetector = new SmartFrameDetector();
     private volatile long rateLimitedUntil = 0L;
     private volatile long lastAnalyzeTapAt = 0L;
+    private volatile boolean smartAutoEnabled = true;
+    private volatile String lastPhase = "UNKLAR";
 
     private String apiKey = "";
     private String model = "gpt-6-luna";
@@ -112,6 +115,7 @@ public class ScreenCaptureService extends Service {
         }
         if (apiKey.trim().isEmpty()) apiKey = ConfigStore.loadApiKey(this);
         if (model.trim().isEmpty()) model = ConfigStore.loadModel(this);
+        smartAutoEnabled = ConfigStore.loadSmartAuto(this);
 
         createOverlayIfAllowed();
 
@@ -140,13 +144,15 @@ public class ScreenCaptureService extends Service {
 
     public static void requestAnalysis() {
         ScreenCaptureService s = instance;
-        if (s != null) s.analyzeCurrentFrame();
+        if (s != null) s.beginAnalysis(true);
     }
 
-    private void analyzeCurrentFrame() {
+    private void beginAnalysis(boolean manual) {
         long now = System.currentTimeMillis();
-        if (now - lastAnalyzeTapAt < 1000L) return;
-        lastAnalyzeTapAt = now;
+        if (manual) {
+            if (now - lastAnalyzeTapAt < 1000L) return;
+            lastAnalyzeTapAt = now;
+        }
 
         if (!analyzing.compareAndSet(false, true)) return;
 
@@ -189,6 +195,7 @@ public class ScreenCaptureService extends Service {
         aiExecutor.execute(() -> {
             try {
                 OpenAIClient.CoachResult result = OpenAIClient.coach(apiKey, model, frame, previousState);
+                lastPhase = result.phase;
 
                 boolean hadMatchMemory = previousState != null && !previousState.trim().isEmpty();
                 boolean resetByPreMatch = "VOR_MATCH".equals(result.phase);
@@ -300,10 +307,24 @@ public class ScreenCaptureService extends Service {
         Image image = null;
         try {
             image = reader.acquireLatestImage();
-            if (image == null || !awaitingCleanFrame.get()) return;
+            if (image == null) return;
 
             long now = System.currentTimeMillis();
+
+            if (!awaitingCleanFrame.get()) {
+                if (smartAutoEnabled
+                        && !analyzing.get()
+                        && now >= rateLimitedUntil
+                        && smartFrameDetector.observe(image, now, lastPhase)) {
+                    smartFrameDetector.markCloudAttempt(now);
+                    mainHandler.post(() -> beginAnalysis(false));
+                }
+                return;
+            }
+
             if (now - cleanFrameRequestedAt < 180L) return;
+
+            smartFrameDetector.markAnalyzed(image, now);
 
             Image.Plane plane = image.getPlanes()[0];
             ByteBuffer buffer = plane.getBuffer();
@@ -417,7 +438,7 @@ public class ScreenCaptureService extends Service {
         TextView analyzeButton = makeChip("ANALYSE");
         analyzeButton.setTextSize(10f);
         analyzeButton.setPadding(dp(8), dp(4), dp(8), dp(4));
-        analyzeButton.setOnClickListener(v -> analyzeCurrentFrame());
+        analyzeButton.setOnClickListener(v -> beginAnalysis(true));
         controlsRow.addView(analyzeButton);
 
         TextView moreButton = makeChip("⋮");
@@ -500,20 +521,42 @@ public class ScreenCaptureService extends Service {
 
     private void showMoreMenu(View anchor) {
         PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add(smartAutoEnabled
+                ? "Intelligente Automatik ausschalten"
+                : "Intelligente Automatik einschalten");
         menu.getMenu().add("Gedächtnis zurücksetzen");
         menu.setOnMenuItemClickListener(item -> {
-            previousState = "";
-            lastDetailText = "";
-            if (detailText != null) detailText.setVisibility(View.GONE);
-            setCoachText("Gedächtnis zurückgesetzt");
-            return true;
+            String title = item.getTitle().toString();
+            if (title.startsWith("Intelligente Automatik")) {
+                smartAutoEnabled = !smartAutoEnabled;
+                ConfigStore.saveSmartAuto(this, smartAutoEnabled);
+                smartFrameDetector.reset();
+                setCoachText(smartAutoEnabled ? "Smart-Auto aktiv" : "Smart-Auto aus");
+                updateHeaderStatus();
+                return true;
+            }
+            if ("Gedächtnis zurücksetzen".equals(title)) {
+                previousState = "";
+                lastPhase = "UNKLAR";
+                lastDetailText = "";
+                smartFrameDetector.reset();
+                if (detailText != null) detailText.setVisibility(View.GONE);
+                setCoachText("Gedächtnis zurückgesetzt");
+                return true;
+            }
+            return false;
         });
         menu.show();
     }
 
     private void updateHeaderStatus() {
         if (coachText != null) {
-            String status = analyzing.get() ? "JARVIS …" : "JARVIS ✓";
+            String status;
+            if (analyzing.get()) {
+                status = "JARVIS …";
+            } else {
+                status = smartAutoEnabled ? "JARVIS ◉" : "JARVIS ✓";
+            }
             coachText.setText(status);
         }
     }
