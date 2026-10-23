@@ -59,6 +59,7 @@ public class ScreenCaptureService extends Service {
     private final Handler mainHandler = new Handler();
     private final SmartFrameDetector smartFrameDetector = new SmartFrameDetector();
     private final LocalHudPerception localHudPerception = new LocalHudPerception();
+    private final EvidenceLedger evidenceLedger = new EvidenceLedger();
     private volatile long rateLimitedUntil = 0L;
     private volatile long lastAnalyzeTapAt = 0L;
     private volatile boolean smartAutoEnabled = true;
@@ -230,10 +231,8 @@ public class ScreenCaptureService extends Service {
         final boolean manualRequest = currentAnalysisManual;
         aiExecutor.execute(() -> {
             try {
-                String stateContext = matchState.toPromptContext();
-                if (localHud != null && localHud.hasAny()) {
-                    stateContext += localHud.toPromptContext();
-                }
+                evidenceLedger.recordLocal(localHud);
+                String stateContext = matchState.toPromptContext() + evidenceLedger.toPromptContext();
 
                 OpenAIClient.CoachResult result;
                 if (ConfigStore.PROVIDER_GEMINI.equals(provider)) {
@@ -243,6 +242,13 @@ public class ScreenCaptureService extends Service {
                     result = OpenAIClient.coach(
                             apiKey, model, frame, detailFrame, detailLabel, stateContext);
                 }
+
+                evidenceLedger.recordCloud(result);
+                DecisionGate.GateResult gated = DecisionGate.validate(result, matchState, evidenceLedger);
+                result = gated.result;
+                if (result == null) throw new Exception("Entscheidung konnte nicht verifiziert werden");
+                String gateNotice = gated.blocked ? "GATE: " + gated.reason : null;
+
                 String resultPhase = result.phase;
                 boolean hadMatchMemory = matchState.hasMemory();
                 boolean endScreen = "ERGEBNIS".equals(resultPhase)
@@ -286,6 +292,7 @@ public class ScreenCaptureService extends Service {
                     matchEndedLock = true;
                     lastPhase = "ERGEBNIS";
                     if (hadMatchMemory) matchState.clear();
+                    evidenceLedger.clear();
                     smartFrameDetector.commitAnalyzed(System.currentTimeMillis());
                     publishCall("ERGEBNIS", "Spiel beendet", "Ergebnis bestätigt; bereit für die nächste Partie.",
                             "INFO", "HOCH",
@@ -300,9 +307,13 @@ public class ScreenCaptureService extends Service {
 
                 if (resetByPreMatch || resetByNewMatch) {
                     matchState.clear();
+                    evidenceLedger.clear();
                     resetNotice = resetByNewMatch
                             ? "MATCH: neuer Start"
                             : "MATCH: voriger State zurückgesetzt";
+                }
+                if (gateNotice != null) {
+                    resetNotice = resetNotice == null ? gateNotice : resetNotice + "\n" + gateNotice;
                 }
 
                 lastPhase = resultPhase;
@@ -374,6 +385,7 @@ public class ScreenCaptureService extends Service {
             StringBuilder detail = new StringBuilder(shortCall);
             detail.append("\nSICHERHEIT: ").append(confidence);
             detail.append("\n").append(matchState.debugSummary());
+            detail.append("\n").append(evidenceLedger.debugSummary());
             if (matchState.primaryTrait != null && !matchState.primaryTrait.trim().isEmpty()) {
                 detail.append("\nKERN: ").append(matchState.primaryTrait.trim());
                 if (matchState.isStrategyEstablished()) detail.append(" ✓");
@@ -737,6 +749,7 @@ public class ScreenCaptureService extends Service {
             }
             if ("Gedächtnis zurücksetzen".equals(title)) {
                 matchState.clear();
+                evidenceLedger.clear();
                 lastPhase = "UNKLAR";
                 matchEndedLock = false;
                 lastDetailText = "";
