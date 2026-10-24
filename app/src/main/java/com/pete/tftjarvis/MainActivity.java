@@ -208,7 +208,7 @@ public class MainActivity extends Activity {
         ttsEngineSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (!ttsUiReady || speechController.getEngineState() != SpeechController.EngineState.READY) return;
+                if (!ttsUiReady) return; // Recovery must work even if the current engine lacks German.
                 String selectedPkg = (position > 0 && position <= availableEngines.size())
                         ? availableEngines.get(position - 1).name
                         : "";
