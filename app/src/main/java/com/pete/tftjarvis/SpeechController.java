@@ -141,9 +141,18 @@ public class SpeechController {
         if (disposed) return;
         if (status == TextToSpeech.SUCCESS) {
             int result = ttsEngine.setLanguage(Locale.GERMAN);
-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            boolean missingGermanData = result == TextToSpeech.LANG_MISSING_DATA;
+            if (result < 0) {
+                // Some engines advertise only the regional de-DE locale.
+                int regionalResult = ttsEngine.setLanguage(Locale.GERMANY);
+                missingGermanData |= regionalResult == TextToSpeech.LANG_MISSING_DATA;
+                result = regionalResult;
+            }
+            if (result < 0) {
                 engineState = EngineState.UNSUPPORTED_LOCALE;
-                updateEventState(STATE_TTS_UNSUPPORTED_LOCALE, "Deutsch (DE) wird vom TTS-Modul nicht unterstützt");
+                updateEventState(STATE_TTS_UNSUPPORTED_LOCALE, missingGermanData
+                        ? "Deutsche TTS-Stimmdaten fehlen – Engine/Stimme installieren oder wechseln"
+                        : "Ausgewählte TTS-Engine kann kein Deutsch – andere Engine wählen");
             } else {
                 engineState = EngineState.READY;
                 defaultVoice = ttsEngine.getVoice();
