@@ -27,7 +27,7 @@ final class HudRegions {
 
     // Coin counter within the round gold badge at bottom right.
     static final Region OWN_GOLD = new Region(
-            0.935f, 0.995f, 0.820f, 0.980f, 0.961f, 0.901f);
+            0.920f, 0.995f, 0.820f, 0.980f, 0.961f, 0.901f);
 
     private HudRegions() {}
 }
