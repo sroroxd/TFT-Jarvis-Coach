@@ -295,9 +295,9 @@ public class ScreenCaptureService extends Service {
                 }
 
                 if (expectedGeneration != stateGeneration.get()) {
-                    // RESET already cleared match memory; don't erase evidence from
-                    // any newer observation or resurrect the old response.
-                    smartFrameDetector.discardPendingAnalysis();
+                    // RESET or capture resizing invalidated this cloud reply.
+                    // Do not mutate the detector: it may already have queued a
+                    // clean frame from the NEW geometry/session.
                     return;
                 }
                 if (FrameFreshnessGate.shouldDiscard(capturedAt, System.currentTimeMillis())) {
