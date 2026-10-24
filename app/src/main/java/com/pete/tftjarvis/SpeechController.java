@@ -83,6 +83,8 @@ public class SpeechController {
     private float currentSpeechRate = 1.0f;
     private float currentSpeechPitch = 1.0f;
     private OnInitCallback initCallback;
+    private boolean disposed;
+    private Voice defaultVoice;
 
     public SpeechController(Context context) {
         this(context, null, null);
@@ -136,6 +138,7 @@ public class SpeechController {
     }
 
     public synchronized void onTtsInitComplete(int status) {
+        if (disposed) return;
         if (status == TextToSpeech.SUCCESS) {
             int result = ttsEngine.setLanguage(Locale.GERMAN);
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
@@ -143,6 +146,7 @@ public class SpeechController {
                 updateEventState(STATE_TTS_UNSUPPORTED_LOCALE, "Deutsch (DE) wird vom TTS-Modul nicht unterstützt");
             } else {
                 engineState = EngineState.READY;
+                defaultVoice = ttsEngine.getVoice();
                 applySpeechParameters();
                 ttsEngine.setUtteranceProgressListener(new UtteranceProgressListener() {
                     @Override
@@ -200,6 +204,8 @@ public class SpeechController {
             if (targetVoice != null) {
                 ttsEngine.setVoice(targetVoice);
             }
+        } else if (defaultVoice != null) {
+            ttsEngine.setVoice(defaultVoice);
         }
     }
 
@@ -455,6 +461,8 @@ public class SpeechController {
     }
 
     public synchronized void shutdown() {
+        disposed = true;
+        initCallback = null;
         stop();
         if (ttsEngine != null) {
             try {
