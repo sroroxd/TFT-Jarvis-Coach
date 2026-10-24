@@ -89,8 +89,12 @@ public class ScreenCaptureService extends Service {
     private final MatchState matchState = new MatchState();
 
     private MediaProjection mediaProjection;
+    private MediaProjection.Callback projectionCallback;
     private VirtualDisplay virtualDisplay;
     private ImageReader imageReader;
+    private int projectionDensity;
+    private volatile int requestedCaptureWidth;
+    private volatile int requestedCaptureHeight;
     private HandlerThread captureThread;
     private Handler captureHandler;
     private volatile long cleanFrameRequestedAt;
@@ -554,13 +558,15 @@ public class ScreenCaptureService extends Service {
     private void startProjection(int resultCode, Intent data) {
         MediaProjectionManager mgr = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
         mediaProjection = mgr.getMediaProjection(resultCode, data);
-        mediaProjection.registerCallback(new MediaProjection.Callback() {
-            @Override public void onStop() { stopSelf(); }
-        }, new Handler(getMainLooper()));
+        if (mediaProjection == null) {
+            setCoachText("Bildschirmfreigabe konnte nicht gestartet werden");
+            stopSelf();
+            return;
+        }
 
         int width;
         int height;
-        int density = getResources().getDisplayMetrics().densityDpi;
+        projectionDensity = getResources().getDisplayMetrics().densityDpi;
         WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         if (Build.VERSION.SDK_INT >= 30) {
             Rect bounds = wm.getMaximumWindowMetrics().getBounds();
@@ -573,28 +579,108 @@ public class ScreenCaptureService extends Service {
             width = dm.widthPixels;
             height = dm.heightPixels;
         }
+        if (!CaptureDimensions.valid(width, height)) {
+            setCoachText("Ungültige Bildschirmabmessungen");
+            stopSelf();
+            return;
+        }
 
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
+        requestedCaptureWidth = width;
+        requestedCaptureHeight = height;
         captureThread = new HandlerThread("tft-capture");
         captureThread.start();
         captureHandler = new Handler(captureThread.getLooper());
-        imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
+        imageReader = makeImageReader(width, height);
+
+        // Android 14+ app-window sharing and rotation can change the actual
+        // capture size independently of the physical display metrics.
+        // We MUST resize both the virtual display and its output surface.
+        projectionCallback = new MediaProjection.Callback() {
+            @Override public void onStop() {
+                stopSelf();
+            }
+
+            @Override public void onCapturedContentResize(int newWidth, int newHeight) {
+                if (!CaptureDimensions.valid(newWidth, newHeight)) return;
+                requestedCaptureWidth = newWidth;
+                requestedCaptureHeight = newHeight;
+                Handler handler = captureHandler;
+                if (handler != null) {
+                    handler.post(() -> resizeCapturedContent(
+                            requestedCaptureWidth, requestedCaptureHeight));
+                }
+            }
+        };
+        mediaProjection.registerCallback(projectionCallback, mainHandler);
 
         virtualDisplay = mediaProjection.createVirtualDisplay(
                 "TFTJarvisCapture",
                 width,
                 height,
-                density,
+                projectionDensity,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 imageReader.getSurface(),
                 null,
                 captureHandler
         );
+
+        // Capture callback can arrive before createVirtualDisplay returns.
+        captureHandler.post(() -> resizeCapturedContent(
+                requestedCaptureWidth, requestedCaptureHeight));
+    }
+
+    private ImageReader makeImageReader(int width, int height) {
+        ImageReader reader = ImageReader.newInstance(
+                width, height, PixelFormat.RGBA_8888, 2);
+        reader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
+        return reader;
+    }
+
+    private void resizeCapturedContent(int width, int height) {
+        // Called on the same capture handler as onImageAvailable so we never
+        // close a reader while a frame from that reader is being processed.
+        if (virtualDisplay == null || imageReader == null
+                || !CaptureDimensions.shouldResize(
+                        imageReader.getWidth(), imageReader.getHeight(), width, height)) {
+            return;
+        }
+
+        ImageReader nextReader = null;
+        try {
+            nextReader = makeImageReader(width, height);
+            virtualDisplay.resize(width, height, projectionDensity);
+            virtualDisplay.setSurface(nextReader.getSurface());
+
+            ImageReader oldReader = imageReader;
+            imageReader = nextReader;
+            oldReader.setOnImageAvailableListener(null, null);
+            oldReader.close();
+
+            // Discard old geometry evidence and any in-flight response, but do
+            // not discard the user's match history or the saved API key.
+            stateGeneration.incrementAndGet();
+            smartFrameDetector.reset();
+            captureSequence.incrementAndGet();
+            if (awaitingCleanFrame.compareAndSet(true, false)) {
+                finishAnalysis();
+                restoreOverlay();
+            }
+            setCoachText("Bildformat geändert – neue Aufnahme bereit");
+        } catch (RuntimeException failure) {
+            if (nextReader != null && nextReader != imageReader) {
+                nextReader.close();
+            }
+            android.util.Log.w("TFTJarvis", "Bildformatwechsel fehlgeschlagen: "
+                    + failure.getClass().getSimpleName());
+            // A broken capture surface cannot safely produce HUD coordinates.
+            stopSelf();
+        }
     }
 
     private void onImageAvailable(ImageReader reader) {
         Image image = null;
         try {
+            if (reader != imageReader) return;
             image = reader.acquireLatestImage();
             if (image == null) return;
             capturedFrameCount.incrementAndGet();
@@ -1029,9 +1115,23 @@ public class ScreenCaptureService extends Service {
         if (overlay != null && windowManager != null) {
             try { windowManager.removeView(overlay); } catch (Throwable ignored) {}
         }
-        if (imageReader != null) imageReader.close();
-        if (virtualDisplay != null) virtualDisplay.release();
-        if (mediaProjection != null) mediaProjection.stop();
+        if (virtualDisplay != null) {
+            virtualDisplay.release();
+            virtualDisplay = null;
+        }
+        if (imageReader != null) {
+            imageReader.setOnImageAvailableListener(null, null);
+            imageReader.close();
+            imageReader = null;
+        }
+        if (mediaProjection != null) {
+            if (projectionCallback != null) {
+                mediaProjection.unregisterCallback(projectionCallback);
+                projectionCallback = null;
+            }
+            mediaProjection.stop();
+            mediaProjection = null;
+        }
         if (captureThread != null) captureThread.quitSafely();
         if (tts != null) tts.shutdown();
         localHudPerception.close();
