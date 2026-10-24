@@ -23,6 +23,14 @@ public class CaptureDimensionsTest {
         assertFalse(CaptureDimensions.shouldResize(3088, 1440, 1, 1));
     }
 
+    @Test public void onlyLandscapeScreensMayUseTftHudCalibration() {
+        assertTrue(CaptureDimensions.isCalibratedLandscape(3088, 1440));
+        assertTrue(CaptureDimensions.isCalibratedLandscape(1920, 1080));
+        assertFalse(CaptureDimensions.isCalibratedLandscape(1440, 3088));
+        assertFalse(CaptureDimensions.isCalibratedLandscape(1080, 1920));
+        assertFalse(CaptureDimensions.isCalibratedLandscape(0, 1440));
+    }
+
     @Test public void acceptValidScreenAndNarrowWindow() {
         assertTrue(CaptureDimensions.valid(3088, 1440));
         assertTrue(CaptureDimensions.valid(400, 900));
