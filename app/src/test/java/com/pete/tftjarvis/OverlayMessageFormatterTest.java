@@ -30,6 +30,14 @@ public class OverlayMessageFormatterTest {
     }
 
     @Test
+    public void unclearPhaseNeverShowsAnUnverifiedPlan() {
+        assertEquals("Nicht sicher erkennbar",
+                OverlayMessageFormatter.detail("UNKLAR", null, "Unbelegte Aktion"));
+        assertEquals("Nicht sicher erkennbar",
+                OverlayMessageFormatter.detail("PLANUNG", "Nicht sicher erkennbar", "Unbelegte Aktion"));
+    }
+
+    @Test
     public void normalDetailContainsOnlyHumanFacingCallAndPlan() {
         String detail = OverlayMessageFormatter.detail(
                 "PLANUNG", "Artefakt erkannt", "Träger zunächst prüfen");
