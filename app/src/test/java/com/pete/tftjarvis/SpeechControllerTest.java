@@ -215,6 +215,9 @@ public class SpeechControllerTest {
 
         assertEquals(SpeechController.EngineState.UNSUPPORTED_LOCALE, controller.getEngineState());
         assertTrue(controller.getLastEventReason().contains("Stimmdaten fehlen"));
+        SpeechController.SpeechResult attempt = controller.speakTestAnnouncement(false);
+        assertFalse(attempt.queued);
+        assertTrue(attempt.reason.contains("Stimmdaten fehlen"));
     }
 
     @Test
