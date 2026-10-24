@@ -113,9 +113,9 @@ final class LocalHudPerception implements AutoCloseable {
         }
     }
 
-    private static final Pattern STAGE_PATTERN = Pattern.compile("(?i)^(?:(?:STAGE|RUNDE)\s*)?([1-9]-[1-9])$");
-    private static final Pattern LEVEL_TOKEN_PATTERN = Pattern.compile("(?i)^(?:(?:LVL\.?|LEVEL|L)\s*)?([0-9]{1,2})$");
-    private static final Pattern GOLD_TOKEN_PATTERN = Pattern.compile("(?i)^\$?\s*([0-9]{1,3})\s*(?:G|GOLD)?$");
+    private static final Pattern STAGE_PATTERN = Pattern.compile("(?i)^(?:(?:STAGE|RUNDE)\\s*)?([1-9]-[1-9])$");
+    private static final Pattern LEVEL_TOKEN_PATTERN = Pattern.compile("(?i)^(?:(?:LVL\\.?|LEVEL|L)\\s*)?([0-9]{1,2})$");
+    private static final Pattern GOLD_TOKEN_PATTERN = Pattern.compile("(?i)^[$]?\\s*([0-9]{1,3})\\s*(?:G|GOLD)?$");
 
     private TextRecognizer recognizer;
 
