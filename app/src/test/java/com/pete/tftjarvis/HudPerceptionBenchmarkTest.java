@@ -80,12 +80,13 @@ public class HudPerceptionBenchmarkTest {
         for (Fixture f : suite) {
             LocalHudPerception.Observation obs = perception.parseCandidates(f.candidates, width, height, now);
             obs = LocalHudPerception.gateForPhase(obs, f.lastPhase);
+            assertNull("HP is unsupported without a verified own-player anchor: " + f.name, obs.health);
 
             // Stage evaluation
             String predStage = obs.stage != null ? obs.stage.value : null;
             if (f.expectedStage != null) {
                 if (f.expectedStage.equals(predStage)) stageMetrics.tp++;
-                else if (predStage != null) stageMetrics.fp++;
+                else if (predStage != null) { stageMetrics.fp++; stageMetrics.fn++; }
                 else stageMetrics.fn++;
             } else {
                 if (predStage != null) stageMetrics.fp++;
@@ -96,7 +97,7 @@ public class HudPerceptionBenchmarkTest {
             Integer predLevel = obs.level != null ? obs.level.value : null;
             if (f.expectedLevel != null) {
                 if (f.expectedLevel.equals(predLevel)) levelMetrics.tp++;
-                else if (predLevel != null) levelMetrics.fp++;
+                else if (predLevel != null) { levelMetrics.fp++; levelMetrics.fn++; }
                 else levelMetrics.fn++;
             } else {
                 if (predLevel != null) levelMetrics.fp++;
@@ -107,7 +108,7 @@ public class HudPerceptionBenchmarkTest {
             Integer predGold = obs.gold != null ? obs.gold.value : null;
             if (f.expectedGold != null) {
                 if (f.expectedGold.equals(predGold)) goldMetrics.tp++;
-                else if (predGold != null) goldMetrics.fp++;
+                else if (predGold != null) { goldMetrics.fp++; goldMetrics.fn++; }
                 else goldMetrics.fn++;
             } else {
                 if (predGold != null) goldMetrics.fp++;
@@ -132,6 +133,9 @@ public class HudPerceptionBenchmarkTest {
         double goldR = goldMetrics.recall();
         double fpRateNonGame = nonGameFixtures == 0 ? 0.0 : (double) nonGameFalsePositives / nonGameFixtures;
 
+        System.out.println("=== SYNTHETIC OCR-CANDIDATE TESTS ONLY; NO REAL DEVICE ACCURACY ===");
+        System.out.println("HP: not measured (own-player anchor not validated).");
+        System.out.println("Phase: not independently inferred by this local OCR benchmark.");
         System.out.println("=== OFFLINE HUD PERCEPTION BENCHMARK RESULTS ===");
         System.out.println(String.format("Total Fixtures: %d (Game: %d, Non-Game: %d)",
                 suite.size(), suite.size() - nonGameFixtures, nonGameFixtures));
@@ -153,6 +157,30 @@ public class HudPerceptionBenchmarkTest {
         assertTrue("Gold Precision must be >= 0.95", goldP >= 0.95);
         assertTrue("Gold Recall must be >= 0.90", goldR >= 0.90);
         assertEquals("False Positive Rate on non-game screens must be 0.0", 0.0, fpRateNonGame, 0.001);
+    }
+
+    @Test public void rejectsAmbiguousHudTokensInsteadOfInventingValues() {
+        assertNull(LocalHudPerception.normalizeStageToken("13-2"));
+        assertNull(LocalHudPerception.normalizeStageToken("3-2-1"));
+        assertNull(LocalHudPerception.normalizeStageToken("unrelated 3-2"));
+        assertEquals("3-2", LocalHudPerception.normalizeStageToken("STAGE 3-2"));
+        assertEquals("4-1", LocalHudPerception.normalizeStageToken("4.1"));
+        assertNull(LocalHudPerception.parseNumericToken("Ashe 5", 1, 10));
+        assertNull(LocalHudPerception.parseNumericToken("XP 4", 1, 10));
+        assertNull(LocalHudPerception.parseNumericToken("HP 80", 0, 999));
+        assertNull(LocalHudPerception.parseNumericToken("54GOLD20", 0, 999));
+        assertEquals(Integer.valueOf(8), LocalHudPerception.parseNumericToken("Lvl. 8", 1, 10));
+        assertEquals(Integer.valueOf(54), LocalHudPerception.parseNumericToken("54G", 0, 999));
+        assertEquals(Integer.valueOf(80), LocalHudPerception.parseNumericToken("$80", 0, 999));
+    }
+
+    @Test public void incorrectPredictionCountsAsFalsePositiveAndFalseNegative() {
+        // A wrong prediction is simultaneously an incorrect claim and a missed truth.
+        FieldMetrics metrics = new FieldMetrics();
+        metrics.fp++;
+        metrics.fn++;
+        assertEquals(0.0, metrics.precision(), 0.0001);
+        assertEquals(0.0, metrics.recall(), 0.0001);
     }
 
     private static List<Fixture> buildBenchmarkSuite() {
@@ -216,6 +244,17 @@ public class HudPerceptionBenchmarkTest {
                 new LocalHudPerception.Candidate("100", 0.961f, 0.901f, 0.05f)
         ), "6-5", 9, 100, true));
 
+        // Adversarial, synthetic OCR noise in plausible HUD coordinates.
+        // These must be refused instead of converted to made-up game facts.
+        suite.add(new Fixture("Misleading text in HUD regions", "PLANUNG", Arrays.asList(
+                new LocalHudPerception.Candidate("13-2", 0.50f, 0.08f, 0.04f),
+                new LocalHudPerception.Candidate("XP 4", 0.080f, 0.942f, 0.05f),
+                new LocalHudPerception.Candidate("Ashe 5", 0.961f, 0.901f, 0.05f)
+        ), null, null, null, true));
+        suite.add(new Fixture("Lobby fake stage token", "VOR_MATCH", Arrays.asList(
+                new LocalHudPerception.Candidate("13-2", 0.50f, 0.08f, 0.04f),
+                new LocalHudPerception.Candidate("XP 4", 0.080f, 0.942f, 0.05f)
+        ), null, null, null, false));
         return suite;
     }
 }
