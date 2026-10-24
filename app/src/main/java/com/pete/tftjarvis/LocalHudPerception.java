@@ -15,6 +15,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * On-device perception for the tiny, high-value TFT Mobile HUD fields.
@@ -72,30 +74,57 @@ final class LocalHudPerception implements AutoCloseable {
         }
     }
 
-    private static final class Candidate {
+    static class Candidate {
         final String text;
         final Rect box;
+        final float relX;
+        final float relY;
+        final float relHeight;
 
         Candidate(String text, Rect box) {
             this.text = text;
             this.box = box;
+            this.relX = -1f;
+            this.relY = -1f;
+            this.relHeight = -1f;
+        }
+
+        Candidate(String text, float relX, float relY, float relHeight) {
+            this.text = text;
+            this.box = null;
+            this.relX = relX;
+            this.relY = relY;
+            this.relHeight = relHeight;
         }
 
         float centerX(int width) {
-            return width <= 0 ? 0f : box.exactCenterX() / width;
+            if (relX >= 0f) return relX;
+            return (box == null || width <= 0) ? 0f : box.exactCenterX() / width;
         }
 
         float centerY(int height) {
-            return height <= 0 ? 0f : box.exactCenterY() / height;
+            if (relY >= 0f) return relY;
+            return (box == null || height <= 0) ? 0f : box.exactCenterY() / height;
         }
 
         float heightNorm(int height) {
-            return height <= 0 ? 0f : (float) box.height() / height;
+            if (relHeight >= 0f) return relHeight;
+            return (box == null || height <= 0) ? 0f : (float) box.height() / height;
         }
     }
 
-    private final TextRecognizer recognizer =
-            TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+    private static final Pattern STAGE_PATTERN = Pattern.compile("(?i)^(?:(?:STAGE|RUNDE)\\s*)?([1-9]-[1-9])$");
+    private static final Pattern LEVEL_TOKEN_PATTERN = Pattern.compile("(?i)^(?:(?:LVL\\.?|LEVEL|L)\\s*)?([0-9]{1,2})$");
+    private static final Pattern GOLD_TOKEN_PATTERN = Pattern.compile("(?i)^[$]?\\s*([0-9]{1,3})\\s*(?:G|GOLD)?$");
+
+    private TextRecognizer recognizer;
+
+    private synchronized TextRecognizer getRecognizer() {
+        if (recognizer == null) {
+            recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+        }
+        return recognizer;
+    }
 
     Observation observe(Bitmap source, String lastPhase) {
         long now = System.currentTimeMillis();
@@ -103,18 +132,13 @@ final class LocalHudPerception implements AutoCloseable {
             return empty(now);
         }
 
-        // The last cloud phase describes an earlier frame and can become stale.
-        // Always inspect the new clean frame; when coming from lobby/result screens,
-        // require a visible round-stage anchor before trusting numeric HUD readings.
         Bitmap input = downscale(source, 1280);
         int width = input.getWidth();
         int height = input.getHeight();
         Task<Text> pending = null;
         try {
-            pending = recognizer.process(InputImage.fromBitmap(input, 0));
+            pending = getRecognizer().process(InputImage.fromBitmap(input, 0));
             if (input != source) {
-                // ML Kit runs asynchronously. A 900ms timeout only stops our
-                // wait, not its work; recycling the bitmap early can corrupt it.
                 final Bitmap taskBitmap = input;
                 pending.addOnCompleteListener(done -> {
                     if (!taskBitmap.isRecycled()) taskBitmap.recycle();
@@ -125,7 +149,6 @@ final class LocalHudPerception implements AutoCloseable {
         } catch (Exception ignored) {
             return empty(now);
         } finally {
-            // If constructing the task failed, no async reader owns the bitmap.
             if (pending == null && input != source && !input.isRecycled()) {
                 input.recycle();
             }
@@ -138,7 +161,6 @@ final class LocalHudPerception implements AutoCloseable {
                 : lastPhase.trim().toUpperCase(Locale.ROOT);
         if (("VOR_MATCH".equals(phase) || "ERGEBNIS".equals(phase))
                 && observation.stage == null) {
-            // Avoid treating lobby menu numbers or result placement as health/gold.
             return empty(observation.observedAt);
         }
         return observation;
@@ -146,22 +168,25 @@ final class LocalHudPerception implements AutoCloseable {
 
     private Observation parse(Text text, int width, int height, long now) {
         List<Candidate> candidates = new ArrayList<>();
-        for (Text.TextBlock block : text.getTextBlocks()) {
-            for (Text.Line line : block.getLines()) {
-                for (Text.Element element : line.getElements()) {
-                    Rect box = element.getBoundingBox();
-                    String value = element.getText();
-                    if (box != null && value != null && !value.trim().isEmpty()) {
-                        candidates.add(new Candidate(value.trim(), box));
+        if (text != null) {
+            for (Text.TextBlock block : text.getTextBlocks()) {
+                for (Text.Line line : block.getLines()) {
+                    for (Text.Element element : line.getElements()) {
+                        Rect box = element.getBoundingBox();
+                        String value = element.getText();
+                        if (box != null && value != null && !value.trim().isEmpty()) {
+                            candidates.add(new Candidate(value.trim(), box));
+                        }
                     }
                 }
             }
         }
+        return parseCandidates(candidates, width, height, now);
+    }
 
+    Observation parseCandidates(List<Candidate> candidates, int width, int height, long now) {
+        if (candidates == null) candidates = new ArrayList<>();
         Field<String> stage = findStage(candidates, width, height);
-        // Own HUD coordinates calibrated on real S24 Ultra landscape captures.
-        // The old broad level region included the adjacent 4-gold XP button,
-        // producing L4(H) for actual level 2. Don't use unanchored timer as HP.
         Field<Integer> level = findNumber(candidates, width, height,
                 1, 10, HudRegions.OWN_LEVEL);
         Field<Integer> gold = findNumber(candidates, width, height,
@@ -181,11 +206,8 @@ final class LocalHudPerception implements AutoCloseable {
             float y = c.centerY(height);
             if (x < 0.24f || x > 0.76f || y > 0.25f) continue;
 
-            String normalized = c.text
-                    .replace('–', '-')
-                    .replace('—', '-')
-                    .replaceAll("\\s+", "");
-            if (!normalized.matches("[1-9]-[1-9]")) continue;
+            String normalized = normalizeStageToken(c.text);
+            if (normalized == null) continue;
 
             float score = c.heightNorm(height) * 100f
                     - Math.abs(x - 0.50f) * 16f
@@ -198,6 +220,22 @@ final class LocalHudPerception implements AutoCloseable {
         }
 
         return best == null ? null : new Field<>(bestValue, "HOCH");
+    }
+
+    static String normalizeStageToken(String raw) {
+        if (raw == null) return null;
+        String cleaned = raw.trim()
+                .replace('–', '-')
+                .replace('—', '-')
+                .replace('.', '-')
+                .replace(':', '-')
+                .replace('_', '-');
+        cleaned = cleaned.replaceAll("\\s*-\\s*", "-");
+        Matcher m = STAGE_PATTERN.matcher(cleaned);
+        if (m.matches()) {
+            return m.group(1);
+        }
+        return null;
     }
 
     private Field<Integer> findNumber(
@@ -217,8 +255,8 @@ final class LocalHudPerception implements AutoCloseable {
             float y = c.centerY(height);
             if (!region.contains(x, y)) continue;
 
-            Integer value = parseNumericToken(c.text);
-            if (value == null || value < min || value > max) continue;
+            Integer value = parseNumericToken(c.text, min, max);
+            if (value == null) continue;
 
             float distance = Math.abs(x - region.expectedX) + Math.abs(y - region.expectedY);
             float score = c.heightNorm(height) * 120f - distance * 18f;
@@ -229,23 +267,24 @@ final class LocalHudPerception implements AutoCloseable {
             }
         }
 
-        // Numeric OCR is intentionally conservative. MatchState promotes it after
-        // cloud agreement on the same frame or a second matching local observation.
         return best == null ? null : new Field<>(bestValue, "MITTEL");
     }
 
-    private static Integer parseNumericToken(String raw) {
+    static Integer parseNumericToken(String raw, int min, int max) {
         if (raw == null) return null;
         String cleaned = raw.trim();
         if (cleaned.isEmpty()) return null;
 
-        // Reject words and mixed champion/item labels; tolerate harmless UI symbols.
-        if (cleaned.matches(".*[A-Za-zÄÖÜäöüß].*")) return null;
-        String digits = cleaned.replaceAll("[^0-9]", "");
-        if (digits.isEmpty() || digits.length() > 3) return null;
-
+        // OCR tokens must match the WHOLE expected HUD label. Stripping all
+        // non-digits would turn "Ashe 5", "XP 4" or unrelated UI text into
+        // falsely confirmed level/gold readings.
+        Pattern pattern = (min == 1 && max == 10)
+                ? LEVEL_TOKEN_PATTERN : GOLD_TOKEN_PATTERN;
+        Matcher match = pattern.matcher(cleaned);
+        if (!match.matches()) return null;
         try {
-            return Integer.parseInt(digits);
+            int parsed = Integer.parseInt(match.group(1));
+            return (parsed >= min && parsed <= max) ? parsed : null;
         } catch (NumberFormatException ignored) {
             return null;
         }
@@ -255,8 +294,6 @@ final class LocalHudPerception implements AutoCloseable {
         int w = source.getWidth();
         int h = source.getHeight();
         int largest = Math.max(w, h);
-        // Always own the OCR input, even on small/portrait screenshots:
-        // callers may recycle their source while ML Kit is still running.
         if (largest <= maxSide) return source.copy(Bitmap.Config.ARGB_8888, false);
         float scale = (float) maxSide / largest;
         return Bitmap.createScaledBitmap(
@@ -272,7 +309,10 @@ final class LocalHudPerception implements AutoCloseable {
     }
 
     @Override
-    public void close() {
-        recognizer.close();
+    public synchronized void close() {
+        if (recognizer != null) {
+            recognizer.close();
+            recognizer = null;
+        }
     }
 }

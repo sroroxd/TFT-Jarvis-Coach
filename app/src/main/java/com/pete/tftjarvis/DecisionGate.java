@@ -129,7 +129,7 @@ final class DecisionGate {
 
     private static boolean containsForbiddenCombatAction(String call) {
         if (call == null) return false;
-        String t = call.toLowerCase(Locale.GERMAN);
+        String t = call.trim().toLowerCase(Locale.GERMAN);
         return t.contains("kauf")
                 || t.contains("roll")
                 || t.contains("reroll")
@@ -140,11 +140,19 @@ final class DecisionGate {
 
     private static boolean isBuyCall(String call) {
         if (call == null) return false;
-        String t = call.toLowerCase(Locale.GERMAN).trim();
+        String t = call.trim().toLowerCase(Locale.GERMAN);
         return t.startsWith("kauf ")
+                || t.startsWith("kauf:")
                 || t.startsWith("kaufe ")
+                || t.startsWith("kaufe:")
                 || t.contains("; kauf ")
+                || t.contains("; kauf:")
+                || t.contains("; kaufe ")
+                || t.contains("; kaufe:")
                 || t.contains(", kauf ")
+                || t.contains(", kauf:")
+                || t.contains(", kaufe ")
+                || t.contains(", kaufe:")
                 || t.contains(" kaufen");
     }
 
