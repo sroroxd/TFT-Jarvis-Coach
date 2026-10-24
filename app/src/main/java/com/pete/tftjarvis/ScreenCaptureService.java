@@ -685,6 +685,18 @@ public class ScreenCaptureService extends Service {
             if (image == null) return;
             capturedFrameCount.incrementAndGet();
 
+            // The calibrated TFT Mobile HUD must never be inferred from a
+            // portrait app-window stream after Android changes share bounds.
+            if (!CaptureDimensions.isCalibratedLandscape(
+                    image.getWidth(), image.getHeight())) {
+                if (awaitingCleanFrame.compareAndSet(true, false)) {
+                    finishAnalysis();
+                    restoreOverlay();
+                    setCoachText("Spielbild im Querformat freigeben");
+                }
+                return;
+            }
+
             long now = System.currentTimeMillis();
 
             if (!awaitingCleanFrame.get()) {
