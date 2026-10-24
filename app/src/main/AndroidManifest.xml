@@ -15,7 +15,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="TFT Jarvis Coach"
+        android:label="JARVIS S24 QA"
         android:theme="@style/Theme.TFTJarvis"
         android:usesCleartextTraffic="false">
 
