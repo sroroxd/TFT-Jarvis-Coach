@@ -25,7 +25,9 @@ final class OverlayMessageFormatter {
 
     static String detail(String phase, String call, String plan) {
         String concise = message(phase, call);
-        if ("VOR_MATCH".equals(phase) || plan == null || plan.trim().isEmpty()) {
+        if ("VOR_MATCH".equals(phase) || "UNKLAR".equals(phase)
+                || "Nicht sicher erkennbar".equals(concise)
+                || plan == null || plan.trim().isEmpty()) {
             return concise;
         }
         String next = plan.trim();
