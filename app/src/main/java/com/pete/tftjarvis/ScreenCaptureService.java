@@ -80,8 +80,6 @@ public class ScreenCaptureService extends Service {
     private volatile boolean currentAnalysisManual = false;
     private volatile String lastPhase = "UNKLAR";
     private volatile boolean matchEndedLock = false;
-    private String lastSpokenKey = "";
-    private long lastSpokenAt = 0L;
 
     private String provider = ConfigStore.PROVIDER_GEMINI;
     private String apiKey = "";
@@ -112,7 +110,7 @@ public class ScreenCaptureService extends Service {
     private boolean overlayExpanded;
     private String lastCoachText = "JARVIS bereit";
     private String lastDetailText = "";
-    private TextToSpeech tts;
+    private SpeechController speechController;
 
     private final Runnable hideTransientCall = new Runnable() {
         @Override public void run() {
@@ -128,7 +126,7 @@ public class ScreenCaptureService extends Service {
         super.onCreate();
         instance = this;
         createNotificationChannel();
-        initTts();
+        speechController = new SpeechController(this);
     }
 
     @Override
@@ -507,8 +505,12 @@ public class ScreenCaptureService extends Service {
                 if (overlayExpanded) detailText.setVisibility(View.VISIBLE);
             }
 
-            if (tts != null && shouldSpeak(phase, call, priority, confidence, manualRequest)) {
-                tts.speak(call, TextToSpeech.QUEUE_FLUSH, null, "tft-call");
+            if (speechController != null) {
+                SpeechController.SpeechResult result = speechController.speakCall(
+                        phase, call, priority, confidence, manualRequest, speechMuted);
+                detail.append("\nSPRACHE: ").append(result.state).append(" (").append(result.reason).append(")");
+                lastDetailText = detail.toString();
+                if (detailText != null) detailText.setText(lastDetailText);
             }
             NotificationManager nm = getSystemService(NotificationManager.class);
             nm.notify(NOTIFICATION_ID, buildNotification(call));
@@ -519,41 +521,6 @@ public class ScreenCaptureService extends Service {
         return stage != null && stage.matches("1-\\d+");
     }
 
-    private boolean shouldSpeak(String phase, String call, String priority,
-                                String confidence, boolean manualRequest) {
-        if (speechMuted || call == null || call.trim().isEmpty()) return false;
-        String normalizedCall = call.toLowerCase(Locale.GERMAN)
-                .replaceAll("[^a-z0-9äöüß ]", " ")
-                .replaceAll("\\s+", " ")
-                .trim();
-
-        if (normalizedCall.isEmpty()
-                || normalizedCall.contains("nicht sicher erkennbar")
-                || normalizedCall.contains("warte auf planungsphase")
-                || "VOR_MATCH".equals(phase)
-                || "ERGEBNIS".equals(phase)
-                || "INFO".equals(priority)
-                || "NIEDRIG".equals(confidence)) {
-            return false;
-        }
-
-        boolean eligible;
-        if (manualRequest) {
-            eligible = ("KRITISCH".equals(priority) || "WICHTIG".equals(priority))
-                    && ("HOCH".equals(confidence) || "MITTEL".equals(confidence));
-        } else {
-            eligible = "KRITISCH".equals(priority) && "HOCH".equals(confidence);
-        }
-        if (!eligible) return false;
-
-        long now = System.currentTimeMillis();
-        String key = phase + "|" + normalizedCall;
-        if (key.equals(lastSpokenKey) && now - lastSpokenAt < 30_000L) return false;
-
-        lastSpokenKey = key;
-        lastSpokenAt = now;
-        return true;
-    }
 
     private void startProjection(int resultCode, Intent data) {
         MediaProjectionManager mgr = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
@@ -945,6 +912,7 @@ public class ScreenCaptureService extends Service {
                 ? "Intelligente Automatik ausschalten"
                 : "Intelligente Automatik einschalten");
         menu.getMenu().add(speechMuted ? "Sprache einschalten" : "Stumm schalten");
+        menu.getMenu().add("Testansage abspielen");
         menu.getMenu().add("Status anzeigen");
         menu.getMenu().add("Neue Partie / Gedächtnis zurücksetzen");
         menu.setOnMenuItemClickListener(item -> {
@@ -960,16 +928,24 @@ public class ScreenCaptureService extends Service {
             if ("Stumm schalten".equals(title) || "Sprache einschalten".equals(title)) {
                 speechMuted = !speechMuted;
                 ConfigStore.saveSpeechMuted(this, speechMuted);
-                if (speechMuted && tts != null) tts.stop();
+                if (speechMuted && speechController != null) speechController.stop();
                 setCoachText(speechMuted ? "Sprachausgabe stumm" : "Sprachausgabe aktiv");
                 updateHeaderStatus();
                 return true;
             }
+            if ("Testansage abspielen".equals(title)) {
+                if (speechController != null) {
+                    SpeechController.SpeechResult res = speechController.speakTestAnnouncement(speechMuted);
+                    setCoachText("Testansage: " + res.reason);
+                }
+                return true;
+            }
             if ("Status anzeigen".equals(title)) {
                 String source = ConfigStore.PROVIDER_GEMINI.equals(provider) ? "Gemini" : "OpenAI";
+                String ttsSummary = speechController != null ? speechController.getStatusSummary(speechMuted) : "TTS: null";
                 setCoachText("Status: " + source + " | Auto: "
                         + (smartAutoEnabled ? "AN" : "AUS")
-                        + " | Sprache: " + (speechMuted ? "STUMM" : "AN")
+                        + " | " + ttsSummary
                         + " | Phase: " + lastPhase
                         + " | " + evidenceLedger.debugSummary()
                         + " | Frames: " + capturedFrameCount.get()
@@ -988,8 +964,7 @@ public class ScreenCaptureService extends Service {
                 lastPhase = "UNKLAR";
                 matchEndedLock = false;
                 lastDetailText = "";
-                lastSpokenKey = "";
-                lastSpokenAt = 0L;
+                if (speechController != null) speechController.resetMemory();
                 smartFrameDetector.reset();
                 if (detailText != null) detailText.setVisibility(View.GONE);
                 setCoachText("Neue Partie – Gedächtnis zurückgesetzt");
@@ -1110,11 +1085,6 @@ public class ScreenCaptureService extends Service {
         }
     }
 
-    private void initTts() {
-        tts = new TextToSpeech(this, status -> {
-            if (status == TextToSpeech.SUCCESS) tts.setLanguage(Locale.GERMAN);
-        });
-    }
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
@@ -1156,7 +1126,10 @@ public class ScreenCaptureService extends Service {
             mediaProjection = null;
         }
         if (captureThread != null) captureThread.quitSafely();
-        if (tts != null) tts.shutdown();
+        if (speechController != null) {
+            speechController.shutdown();
+            speechController = null;
+        }
         localHudPerception.close();
         aiExecutor.shutdownNow();
         super.onDestroy();
