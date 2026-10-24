@@ -27,7 +27,6 @@ public class MainActivity extends Activity {
     private Spinner providerInput;
     private boolean startAfterOverlayPermission;
     private boolean providerUiReady;
-    private SpeechController localSpeechTest;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,8 +41,6 @@ public class MainActivity extends Activity {
         Button startButton = findViewById(R.id.startButton);
         Button rememberButton = findViewById(R.id.rememberButton);
         Button stopButton = findViewById(R.id.stopButton);
-        Button speechTestButton = findViewById(R.id.speechTestButton);
-        localSpeechTest = new SpeechController(this);
         Button forgetKeyButton = findViewById(R.id.forgetKeyButton);
 
         ArrayAdapter<String> providerAdapter = new ArrayAdapter<>(
@@ -90,11 +87,6 @@ public class MainActivity extends Activity {
                     REQ_NOTIFICATIONS
             );
         }
-
-        speechTestButton.setOnClickListener(v -> {
-            SpeechController.SpeechResult result = localSpeechTest.speakTestAnnouncement(false);
-            status("Testansage: " + result.reason);
-        });
 
         startButton.setOnClickListener(v -> startCoachingFlow());
 
@@ -247,15 +239,6 @@ public class MainActivity extends Activity {
         } else {
             status("Bildschirmfreigabe nicht erteilt");
         }
-    }
-
-    @Override
-    protected void onDestroy() {
-        if (localSpeechTest != null) {
-            localSpeechTest.shutdown();
-            localSpeechTest = null;
-        }
-        super.onDestroy();
     }
 
     private void status(String text) {

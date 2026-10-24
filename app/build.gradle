@@ -30,11 +30,6 @@ android {
     }
 
     buildTypes {
-        debug {
-            // Isolated S24 Ultra test app: install beside stable signed release.
-            applicationIdSuffix '.test'
-            versionNameSuffix '-test'
-        }
         release {
             signingConfig signingConfigs.stableRelease
         }

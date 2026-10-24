@@ -185,7 +185,7 @@ public class SpeechController {
         }
 
         if (engineState == EngineState.UNINITIALIZED || engineState == EngineState.INITIALIZING) {
-            updateEventState(STATE_TTS_INITIALIZING, "TTS noch nicht bereit; Hinweis nicht gesprochen, bitte erneut prüfen");
+            updateEventState(STATE_TTS_INITIALIZING, "TTS noch nicht bereit; Tipp wird nach Initialisierung gesprochen");
             return new SpeechResult(false, STATE_TTS_INITIALIZING, lastEventReason);
         }
 
