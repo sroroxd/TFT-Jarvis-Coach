@@ -679,6 +679,11 @@ public class ScreenCaptureService extends Service {
 
     private void onImageAvailable(ImageReader reader) {
         Image image = null;
+        Bitmap padded = null;
+        Bitmap cropped = null;
+        Bitmap upload = null;
+        Bitmap detailBitmap = null;
+        Bitmap detailUpload = null;
         try {
             if (reader != imageReader) return;
             image = reader.acquireLatestImage();
@@ -719,33 +724,31 @@ public class ScreenCaptureService extends Service {
             int pixelStride = plane.getPixelStride();
             int rowStride = plane.getRowStride();
             int rowPadding = rowStride - pixelStride * image.getWidth();
-            Bitmap padded = Bitmap.createBitmap(
+            padded = Bitmap.createBitmap(
                     image.getWidth() + rowPadding / pixelStride,
                     image.getHeight(),
                     Bitmap.Config.ARGB_8888
             );
             padded.copyPixelsFromBuffer(buffer);
-            Bitmap cropped = Bitmap.createBitmap(padded, 0, 0, image.getWidth(), image.getHeight());
+            cropped = Bitmap.createBitmap(padded, 0, 0, image.getWidth(), image.getHeight());
             long ocrStart = System.nanoTime();
             LocalHudPerception.Observation localHud = localHudPerception.observe(cropped, lastPhase);
             lastOcrMs = Math.max(0L, (System.nanoTime() - ocrStart) / 1_000_000L);
-            Bitmap upload = downscale(cropped, 1280);
+            upload = downscale(cropped, 1280);
             String cleanFrame = encodeJpeg(upload, 72);
 
             String detailFrame = null;
             String detailLabel = null;
             TftRoiSelector.Selection selection = TftRoiSelector.select(cropped, lastPhase);
             if (selection != null) {
-                Bitmap detailUpload = downscale(selection.bitmap, 1024);
+                detailBitmap = selection.bitmap;
+                detailUpload = downscale(detailBitmap, 1024);
                 detailFrame = encodeJpeg(detailUpload, 80);
                 detailLabel = selection.label;
-                if (detailUpload != selection.bitmap) detailUpload.recycle();
-                selection.bitmap.recycle();
+
             }
 
-            if (upload != cropped) upload.recycle();
-            if (cropped != padded) cropped.recycle();
-            padded.recycle();
+
 
             if (awaitingCleanFrame.compareAndSet(true, false)) {
                 restoreOverlay();
@@ -761,6 +764,14 @@ public class ScreenCaptureService extends Service {
                 setCoachText("Bild konnte nicht gelesen werden");
             }
         } finally {
+            // Ensure failures in OCR, JPEG encoding or ROI cropping cannot retain
+            // several full-resolution bitmap allocations until later garbage collection.
+            if (detailUpload != null && detailUpload != detailBitmap
+                    && !detailUpload.isRecycled()) detailUpload.recycle();
+            if (detailBitmap != null && !detailBitmap.isRecycled()) detailBitmap.recycle();
+            if (upload != null && upload != cropped && !upload.isRecycled()) upload.recycle();
+            if (cropped != null && cropped != padded && !cropped.isRecycled()) cropped.recycle();
+            if (padded != null && !padded.isRecycled()) padded.recycle();
             if (image != null) image.close();
         }
     }
