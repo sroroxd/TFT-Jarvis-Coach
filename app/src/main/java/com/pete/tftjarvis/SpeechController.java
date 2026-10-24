@@ -71,6 +71,7 @@ public class SpeechController {
     private EngineState engineState = EngineState.UNINITIALIZED;
     private String lastEventState = STATE_TTS_INITIALIZING;
     private String lastEventReason = "TTS uninitialisiert";
+    private String germanLocaleFailureReason = "";
 
     private String activeUtteranceId = "";
     private String activeKey = "";
@@ -150,11 +151,13 @@ public class SpeechController {
             }
             if (result < 0) {
                 engineState = EngineState.UNSUPPORTED_LOCALE;
-                updateEventState(STATE_TTS_UNSUPPORTED_LOCALE, missingGermanData
+                germanLocaleFailureReason = missingGermanData
                         ? "Deutsche TTS-Stimmdaten fehlen – Engine/Stimme installieren oder wechseln"
-                        : "Ausgewählte TTS-Engine kann kein Deutsch – andere Engine wählen");
+                        : "Ausgewählte TTS-Engine kann kein Deutsch – andere Engine wählen";
+                updateEventState(STATE_TTS_UNSUPPORTED_LOCALE, germanLocaleFailureReason);
             } else {
                 engineState = EngineState.READY;
+                germanLocaleFailureReason = "";
                 defaultVoice = ttsEngine.getVoice();
                 applySpeechParameters();
                 ttsEngine.setUtteranceProgressListener(new UtteranceProgressListener() {
@@ -343,7 +346,8 @@ public class SpeechController {
         }
 
         if (engineState == EngineState.UNSUPPORTED_LOCALE) {
-            updateEventState(STATE_TTS_UNSUPPORTED_LOCALE, "TTS unterstützt deutsche Sprache nicht");
+            updateEventState(STATE_TTS_UNSUPPORTED_LOCALE, germanLocaleFailureReason.isEmpty()
+                    ? "TTS unterstützt deutsche Sprache nicht" : germanLocaleFailureReason);
             return new SpeechResult(false, STATE_TTS_UNSUPPORTED_LOCALE, lastEventReason);
         }
 
@@ -371,7 +375,8 @@ public class SpeechController {
         }
 
         if (engineState == EngineState.UNSUPPORTED_LOCALE) {
-            updateEventState(STATE_TTS_UNSUPPORTED_LOCALE, "Deutsch wird vom TTS-Modul nicht unterstützt");
+            updateEventState(STATE_TTS_UNSUPPORTED_LOCALE, germanLocaleFailureReason.isEmpty()
+                    ? "Deutsch wird vom TTS-Modul nicht unterstützt" : germanLocaleFailureReason);
             return new SpeechResult(false, STATE_TTS_UNSUPPORTED_LOCALE, lastEventReason);
         }
 
