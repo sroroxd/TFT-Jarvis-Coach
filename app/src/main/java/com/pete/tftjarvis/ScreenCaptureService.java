@@ -109,6 +109,8 @@ public class ScreenCaptureService extends Service {
     private boolean overlayExpanded;
     private String lastCoachText = "JARVIS bereit";
     private String lastDetailText = "";
+    private String lastDiagnosticText = "";
+    private boolean diagnosticsVisible;
     private SpeechController speechController;
 
     private final Runnable hideTransientCall = new Runnable() {
@@ -486,44 +488,45 @@ public class ScreenCaptureService extends Service {
                              String confidence, String resetNotice, boolean manualRequest) {
         mainHandler.post(() -> {
             String badge = "KRITISCH".equals(priority) ? "!" : ("WICHTIG".equals(priority) ? "*" : "i");
-            String shortCall = "[" + badge + "][" + phase + "] " + call;
-            StringBuilder detail = new StringBuilder(shortCall);
-            detail.append("\nSICHERHEIT: ").append(confidence);
-            detail.append("\n").append(matchState.debugSummary());
-            detail.append("\n").append(evidenceLedger.debugSummary());
+            String shortCall = OverlayMessageFormatter.message(phase, call);
+            StringBuilder diagnostic = new StringBuilder("[" + badge + "][" + phase + "] " + call);
+            diagnostic.append("\nSICHERHEIT: ").append(confidence);
+            diagnostic.append("\n").append(matchState.debugSummary());
+            diagnostic.append("\n").append(evidenceLedger.debugSummary());
             if (matchState.primaryTrait != null && !matchState.primaryTrait.trim().isEmpty()) {
-                detail.append("\nKERN: ").append(matchState.primaryTrait.trim());
-                if (matchState.isStrategyEstablished()) detail.append(" ✓");
-                else detail.append(" (Tendenz)");
+                diagnostic.append("\nKERN: ").append(matchState.primaryTrait.trim());
+                if (matchState.isStrategyEstablished()) diagnostic.append(" ✓");
+                else diagnostic.append(" (Tendenz)");
             }
             if (matchState.compPlan != null && !matchState.compPlan.trim().isEmpty()) {
-                detail.append("\nCOMP: ").append(matchState.compPlan.trim());
+                diagnostic.append("\nCOMP: ").append(matchState.compPlan.trim());
             }
             if (plan != null && !plan.trim().isEmpty()) {
-                detail.append("\nNÄCHSTER SCHRITT: ").append(plan.trim());
+                diagnostic.append("\nNÄCHSTER SCHRITT: ").append(plan.trim());
             }
             if (resetNotice != null && !resetNotice.trim().isEmpty()) {
-                detail.append("\n").append(resetNotice.trim());
+                diagnostic.append("\n").append(resetNotice.trim());
             }
 
             lastCoachText = shortCall;
-            lastDetailText = detail.toString();
+            lastDetailText = OverlayMessageFormatter.detail(phase, call, plan);
+            lastDiagnosticText = diagnostic.toString();
             updateHeaderStatus();
             showTransientCall(shortCall);
-            if (detailText != null) {
-                detailText.setText(lastDetailText);
-                if (overlayExpanded) detailText.setVisibility(View.VISIBLE);
-            }
 
             if (speechController != null) {
                 SpeechController.SpeechResult result = speechController.speakCall(
                         phase, call, priority, confidence, manualRequest, speechMuted);
-                detail.append("\nSPRACHE: ").append(result.state).append(" (").append(result.reason).append(")");
-                lastDetailText = detail.toString();
-                if (detailText != null) detailText.setText(lastDetailText);
+                diagnostic.append("\nSPRACHE: ").append(result.state)
+                        .append(" (").append(result.reason).append(")");
+                lastDiagnosticText = diagnostic.toString();
+            }
+            if (detailText != null && overlayExpanded) {
+                detailText.setText(diagnosticsVisible ? lastDiagnosticText : lastDetailText);
+                detailText.setVisibility(View.VISIBLE);
             }
             NotificationManager nm = getSystemService(NotificationManager.class);
-            nm.notify(NOTIFICATION_ID, buildNotification(call));
+            nm.notify(NOTIFICATION_ID, buildNotification(shortCall));
         });
     }
 
@@ -820,7 +823,7 @@ public class ScreenCaptureService extends Service {
         detailText = new TextView(this);
         detailText.setTextColor(0xFFF4F4F4);
         detailText.setTextSize(11.5f);
-        detailText.setMaxLines(9);
+        detailText.setMaxLines(5);
         detailText.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.62f));
         detailText.setPadding(dp(7), dp(4), dp(7), dp(2));
         detailText.setVisibility(View.GONE);
@@ -889,10 +892,12 @@ public class ScreenCaptureService extends Service {
 
     private void toggleOverlayExpanded() {
         overlayExpanded = !overlayExpanded;
+        diagnosticsVisible = false;
         mainHandler.removeCallbacks(hideTransientCall);
 
         if (controlsRow != null) controlsRow.setVisibility(overlayExpanded ? View.VISIBLE : View.GONE);
         if (detailText != null) {
+            detailText.setMaxLines(5);
             detailText.setText(lastDetailText);
             detailText.setVisibility(overlayExpanded && !lastDetailText.trim().isEmpty() ? View.VISIBLE : View.GONE);
         }
@@ -923,7 +928,7 @@ public class ScreenCaptureService extends Service {
                 : "Intelligente Automatik einschalten");
         menu.getMenu().add(speechMuted ? "Sprache einschalten" : "Stumm schalten");
         menu.getMenu().add("Testansage abspielen");
-        menu.getMenu().add("Status anzeigen");
+        menu.getMenu().add("Diagnose anzeigen");
         menu.getMenu().add("Neue Partie / Gedächtnis zurücksetzen");
         menu.setOnMenuItemClickListener(item -> {
             String title = item.getTitle().toString();
@@ -950,20 +955,8 @@ public class ScreenCaptureService extends Service {
                 }
                 return true;
             }
-            if ("Status anzeigen".equals(title)) {
-                String source = ConfigStore.PROVIDER_GEMINI.equals(provider) ? "Gemini" : "OpenAI";
-                String ttsSummary = speechController != null ? speechController.getStatusSummary(speechMuted) : "TTS: null";
-                setCoachText("Status: " + source + " | Auto: "
-                        + (smartAutoEnabled ? "AN" : "AUS")
-                        + " | " + ttsSummary
-                        + " | Phase: " + lastPhase
-                        + " | " + evidenceLedger.debugSummary()
-                        + " | Frames: " + capturedFrameCount.get()
-                        + " | Cloud: " + cloudAcceptedCount.get() + "/"
-                        + cloudAttemptCount.get()
-                        + " | Fehler: " + cloudErrorCount.get() + " (" + lastErrorType + ")"
-                        + " | OCR: " + lastOcrMs + "ms"
-                        + " | KI: " + lastCloudMs + "ms");
+            if ("Diagnose anzeigen".equals(title)) {
+                showDiagnostics();
                 return true;
             }
             if ("Neue Partie / Gedächtnis zurücksetzen".equals(title)) {
@@ -974,6 +967,8 @@ public class ScreenCaptureService extends Service {
                 lastPhase = "UNKLAR";
                 matchEndedLock = false;
                 lastDetailText = "";
+                lastDiagnosticText = "";
+                diagnosticsVisible = false;
                 if (speechController != null) speechController.resetMemory();
                 smartFrameDetector.reset();
                 if (detailText != null) detailText.setVisibility(View.GONE);
@@ -983,6 +978,45 @@ public class ScreenCaptureService extends Service {
             return false;
         });
         menu.show();
+    }
+
+    private void showDiagnostics() {
+        String source = ConfigStore.PROVIDER_GEMINI.equals(provider) ? "Gemini" : "OpenAI";
+        String ttsSummary = speechController != null
+                ? speechController.getStatusSummary(speechMuted) : "TTS: nicht initialisiert";
+        StringBuilder report = new StringBuilder();
+        if (!lastDiagnosticText.trim().isEmpty()) {
+            report.append(lastDiagnosticText).append("\n");
+        }
+        report.append("STATUS: ").append(source)
+                .append(" | Auto: ").append(smartAutoEnabled ? "AN" : "AUS")
+                .append(" | ").append(ttsSummary)
+                .append("\nPhase: ").append(lastPhase)
+                .append(" | Frames: ").append(capturedFrameCount.get())
+                .append(" | Cloud: ").append(cloudAcceptedCount.get())
+                .append("/").append(cloudAttemptCount.get())
+                .append(" | Fehler: ").append(cloudErrorCount.get())
+                .append(" (").append(lastErrorType).append(")")
+                .append(" | OCR: ").append(lastOcrMs).append("ms")
+                .append(" | KI: ").append(lastCloudMs).append("ms");
+
+        diagnosticsVisible = true;
+        overlayExpanded = true;
+        mainHandler.removeCallbacks(hideTransientCall);
+        if (transientCallText != null) transientCallText.setVisibility(View.GONE);
+        if (controlsRow != null) controlsRow.setVisibility(View.VISIBLE);
+        if (detailText != null) {
+            detailText.setMaxLines(16);
+            detailText.setText(report.toString());
+            detailText.setVisibility(View.VISIBLE);
+        }
+        if (expandButton != null) {
+            expandButton.setText("▴");
+            expandButton.setContentDescription("JARVIS Diagnose einklappen");
+        }
+        if (overlay != null && windowManager != null && overlayParams != null) {
+            windowManager.updateViewLayout(overlay, overlayParams);
+        }
     }
 
     private void updateHeaderStatus() {
