@@ -16,6 +16,7 @@ public class SpeechControllerTest {
 
     private static class FakeTtsEngine implements SpeechController.TtsEngine {
         int languageResult = TextToSpeech.LANG_AVAILABLE;
+        int regionalLanguageResult = TextToSpeech.LANG_NOT_SUPPORTED;
         int speakResult = TextToSpeech.SUCCESS;
         int stopResult = TextToSpeech.SUCCESS;
         boolean shutdownCalled = false;
@@ -34,7 +35,7 @@ public class SpeechControllerTest {
         @Override
         public int setLanguage(Locale loc) {
             this.lastLanguageSet = loc;
-            return languageResult;
+            return Locale.GERMANY.equals(loc) ? regionalLanguageResult : languageResult;
         }
 
         @Override
@@ -193,6 +194,27 @@ public class SpeechControllerTest {
         assertEquals(SpeechController.EngineState.READY, controller.getEngineState());
         assertEquals(Locale.GERMAN, fakeEngine.lastLanguageSet);
         assertEquals(SpeechController.STATE_TTS_DONE, controller.getLastEventState());
+    }
+
+    @Test
+    public void regionalGermanLocaleCanRecoverEngine() {
+        fakeEngine.languageResult = TextToSpeech.LANG_NOT_SUPPORTED;
+        fakeEngine.regionalLanguageResult = TextToSpeech.LANG_AVAILABLE;
+        SpeechController controller = new SpeechController(context, fakeEngine);
+
+        assertEquals(SpeechController.EngineState.READY, controller.getEngineState());
+        assertEquals(Locale.GERMANY, fakeEngine.lastLanguageSet);
+        assertTrue(controller.speakTestAnnouncement(false).queued);
+    }
+
+    @Test
+    public void missingGermanVoiceDataShowsActionableStatus() {
+        fakeEngine.languageResult = TextToSpeech.LANG_MISSING_DATA;
+        fakeEngine.regionalLanguageResult = TextToSpeech.LANG_MISSING_DATA;
+        SpeechController controller = new SpeechController(context, fakeEngine);
+
+        assertEquals(SpeechController.EngineState.UNSUPPORTED_LOCALE, controller.getEngineState());
+        assertTrue(controller.getLastEventReason().contains("Stimmdaten fehlen"));
     }
 
     @Test
