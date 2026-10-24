@@ -52,7 +52,7 @@ public class MainActivity extends Activity {
         ttsEngineSpinner = findViewById(R.id.ttsEngineSpinner);
         ttsVoiceSpinner = findViewById(R.id.ttsVoiceSpinner);
 
-        speechController = new SpeechController(this, state -> runOnUiThread(this::setupTtsSpinners));
+        createSpeechController();
 
         Button startButton = findViewById(R.id.startButton);
         Button rememberButton = findViewById(R.id.rememberButton);
@@ -163,6 +163,7 @@ public class MainActivity extends Activity {
 
         speechResetButton.setOnClickListener(v -> {
             speechController.resetAudioParameters();
+            ScreenCaptureService.reloadSpeechSettings();
             setupTtsSpinners();
             status("Spracheinstellungen zurückgesetzt");
         });
@@ -170,7 +171,17 @@ public class MainActivity extends Activity {
         setupTtsSpinners();
     }
 
+    private void createSpeechController() {
+        if (speechController != null) speechController.shutdown();
+        speechController = new SpeechController(this);
+        SpeechController created = speechController;
+        created.setOnInitCallback(state -> ttsEngineSpinner.post(() -> {
+            if (!isDestroyed() && speechController == created) setupTtsSpinners();
+        }));
+    }
+
     private void setupTtsSpinners() {
+        if (speechController == null || isDestroyed()) return;
         ttsUiReady = false;
         availableEngines.clear();
         availableEngines.addAll(speechController.getAvailableEngines());
@@ -197,15 +208,15 @@ public class MainActivity extends Activity {
         ttsEngineSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (!ttsUiReady) return;
+                if (!ttsUiReady || speechController.getEngineState() != SpeechController.EngineState.READY) return;
                 String selectedPkg = (position > 0 && position <= availableEngines.size())
                         ? availableEngines.get(position - 1).name
                         : "";
+                if (selectedPkg.equals(ConfigStore.loadTtsEnginePackage(MainActivity.this))) return;
                 ConfigStore.saveTtsEnginePackage(MainActivity.this, selectedPkg);
-                if (speechController != null) {
-                    speechController.shutdown();
-                }
-                speechController = new SpeechController(MainActivity.this, state -> runOnUiThread(MainActivity.this::setupTtsSpinners));
+                ConfigStore.saveTtsVoiceName(MainActivity.this, "");
+                createSpeechController();
+                ScreenCaptureService.reloadSpeechSettings();
                 setupTtsSpinners();
                 status("TTS-Engine geändert: " + (selectedPkg.isEmpty() ? "Default" : selectedPkg));
             }
@@ -240,11 +251,13 @@ public class MainActivity extends Activity {
         ttsVoiceSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (!ttsUiReady) return;
+                if (!ttsUiReady || speechController.getEngineState() != SpeechController.EngineState.READY) return;
                 String selectedVoiceName = (position > 0 && position <= availableVoices.size())
                         ? availableVoices.get(position - 1).getName()
                         : "";
+                if (selectedVoiceName.equals(ConfigStore.loadTtsVoiceName(MainActivity.this))) return;
                 speechController.setVoiceName(selectedVoiceName);
+                ScreenCaptureService.reloadSpeechSettings();
                 status("Stimme gewählt: " + (selectedVoiceName.isEmpty() ? "Standard" : selectedVoiceName));
             }
 
