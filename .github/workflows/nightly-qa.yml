@@ -1,0 +1,67 @@
+name: JARVIS nightly QA (free)
+
+on:
+  schedule:
+    # Once daily, off the hour. UTC; GitHub may delay busy schedules.
+    - cron: '17 02 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: jarvis-nightly-qa
+  cancel-in-progress: false
+
+jobs:
+  offline-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Run deterministic Android unit tests
+        run: gradle --no-daemon testDebugUnitTest --stacktrace
+      - name: Run Android static lint
+        run: gradle --no-daemon lintDebug --stacktrace
+      - name: Confirm no plaintext release signing keys are tracked
+        run: |
+          set -euo pipefail
+          if git ls-files '*.p12' '*.jks' '*.keystore' | grep -q .; then
+            echo "::error::Plaintext signing identity in tracked files."
+            exit 1
+          fi
+      - name: Open at most one issue when the nightly check fails
+        if: ${{ failure() && github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="[JARVIS QA] Automatische Nachtprüfung fehlgeschlagen"
+          existing=$(gh issue list --state open --limit 100 --json number,title \
+            --jq '.[] | select(.title=="[JARVIS QA] Automatische Nachtprüfung fehlgeschlagen") | .number' \
+            | head -n 1)
+          if [ -z "$existing" ]; then
+            gh issue create --title "$title" --body "Die automatische Android-Codeprüfung ist fehlgeschlagen.\n\nLetzter betroffener Lauf: $RUN_URL\n\nBitte zuerst die Build-Logs prüfen, Fehler reproduzieren und nur über Pull Requests beheben. Die signierte Release-APK darf nicht automatisch überschrieben werden."
+          else
+            gh issue comment "$existing" --body "Neuer fehlgeschlagener QA-Lauf: $RUN_URL"
+          fi
+      - name: Write QA summary
+        if: always()
+        run: |
+          {
+            echo '### JARVIS – automatische technische Nachtprüfung'
+            echo ''
+            echo '- Android JUnit/Offline-Tests, Lint und Signaturschlüssel-Quellkontrolle'
+            echo '- Ohne API-Schlüssel, KI-Gebühren oder App-Screenshots'
+            echo '- Keine automatischen APK-Releases, keine Pushes in main'
+            echo "- Workflow-Ergebnis: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
