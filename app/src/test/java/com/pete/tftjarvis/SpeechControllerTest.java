@@ -402,4 +402,29 @@ public class SpeechControllerTest {
         assertTrue(controller.getAvailableGermanVoices().isEmpty());
         assertTrue(controller.getAvailableEngines().isEmpty());
     }
+    @Test
+    public void savedAudioSettingsApplyToSeparateCoachController() {
+        SpeechController preview = new SpeechController(context, fakeEngine);
+        preview.setSpeechRate(0.85f);
+        preview.setSpeechPitch(1.1f);
+        FakeTtsEngine coachEngine = new FakeTtsEngine();
+        SpeechController coach = new SpeechController(context, coachEngine);
+        assertEquals(0.85f, coachEngine.lastRate, 0.001f);
+        assertEquals(1.1f, coachEngine.lastPitch, 0.001f);
+        assertTrue(coach.speakCall("PLANUNG", "Test", "WICHTIG", "HOCH", true, false).queued);
+        assertEquals("Test", coachEngine.lastSpokenText);
+    }
+
+    @Test
+    public void lateInitializationCannotReviveDisposedController() {
+        SpeechController controller = new SpeechController(context, fakeEngine);
+        final int[] callbacks = {0};
+        controller.setOnInitCallback(state -> callbacks[0]++);
+        int beforeShutdown = callbacks[0];
+        controller.shutdown();
+        controller.onTtsInitComplete(TextToSpeech.SUCCESS);
+        assertEquals(beforeShutdown, callbacks[0]);
+        assertEquals(SpeechController.EngineState.UNINITIALIZED, controller.getEngineState());
+        assertFalse(controller.speakTestAnnouncement(false).queued);
+    }
 }
