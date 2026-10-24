@@ -10,12 +10,17 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.View;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.Voice;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Spinner;
 import android.widget.TextView;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends Activity {
     private static final int REQ_CAPTURE = 4101;
@@ -25,8 +30,15 @@ public class MainActivity extends Activity {
     private EditText apiKeyInput;
     private EditText modelInput;
     private Spinner providerInput;
+    private Spinner ttsEngineSpinner;
+    private Spinner ttsVoiceSpinner;
     private boolean startAfterOverlayPermission;
     private boolean providerUiReady;
+    private boolean ttsUiReady;
+    private SpeechController speechController;
+
+    private final List<TextToSpeech.EngineInfo> availableEngines = new ArrayList<>();
+    private final List<Voice> availableVoices = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -37,11 +49,18 @@ public class MainActivity extends Activity {
         apiKeyInput = findViewById(R.id.apiKeyInput);
         modelInput = findViewById(R.id.modelInput);
         providerInput = findViewById(R.id.providerInput);
+        ttsEngineSpinner = findViewById(R.id.ttsEngineSpinner);
+        ttsVoiceSpinner = findViewById(R.id.ttsVoiceSpinner);
+
+        speechController = new SpeechController(this, state -> runOnUiThread(this::setupTtsSpinners));
 
         Button startButton = findViewById(R.id.startButton);
         Button rememberButton = findViewById(R.id.rememberButton);
         Button stopButton = findViewById(R.id.stopButton);
         Button forgetKeyButton = findViewById(R.id.forgetKeyButton);
+        Button speechTestButton = findViewById(R.id.speechTestButton);
+        Button ttsSettingsButton = findViewById(R.id.ttsSettingsButton);
+        Button speechResetButton = findViewById(R.id.speechResetButton);
 
         ArrayAdapter<String> providerAdapter = new ArrayAdapter<>(
                 this,
@@ -122,6 +141,118 @@ public class MainActivity extends Activity {
             }
             status("API-Key gelöscht");
         });
+
+        speechTestButton.setOnClickListener(v -> {
+            SpeechController.SpeechResult result = speechController.speakTestPhrase("JARVIS bereit. Artefakt erkannt.", false);
+            status("Testansage: " + result.reason);
+        });
+
+        ttsSettingsButton.setOnClickListener(v -> {
+            try {
+                Intent intent = new Intent("com.android.settings.TTS_SETTINGS");
+                startActivity(intent);
+            } catch (Exception e) {
+                try {
+                    Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                    startActivity(intent);
+                } catch (Exception ex) {
+                    status("System-TTS-Einstellungen konnten nicht geöffnet werden");
+                }
+            }
+        });
+
+        speechResetButton.setOnClickListener(v -> {
+            speechController.resetAudioParameters();
+            setupTtsSpinners();
+            status("Spracheinstellungen zurückgesetzt");
+        });
+
+        setupTtsSpinners();
+    }
+
+    private void setupTtsSpinners() {
+        ttsUiReady = false;
+        availableEngines.clear();
+        availableEngines.addAll(speechController.getAvailableEngines());
+
+        List<String> engineNames = new ArrayList<>();
+        engineNames.add("System-Standard Engine");
+        String savedEngine = ConfigStore.loadTtsEnginePackage(this);
+        int selectedEngineIdx = 0;
+
+        for (int i = 0; i < availableEngines.size(); i++) {
+            TextToSpeech.EngineInfo info = availableEngines.get(i);
+            engineNames.add(info.label + " (" + info.name + ")");
+            if (info.name.equalsIgnoreCase(savedEngine)) {
+                selectedEngineIdx = i + 1;
+            }
+        }
+
+        ArrayAdapter<String> engineAdapter = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, engineNames);
+        engineAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        ttsEngineSpinner.setAdapter(engineAdapter);
+        ttsEngineSpinner.setSelection(selectedEngineIdx, false);
+
+        ttsEngineSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (!ttsUiReady) return;
+                String selectedPkg = (position > 0 && position <= availableEngines.size())
+                        ? availableEngines.get(position - 1).name
+                        : "";
+                ConfigStore.saveTtsEnginePackage(MainActivity.this, selectedPkg);
+                if (speechController != null) {
+                    speechController.shutdown();
+                }
+                speechController = new SpeechController(MainActivity.this, state -> runOnUiThread(MainActivity.this::setupTtsSpinners));
+                setupTtsSpinners();
+                status("TTS-Engine geändert: " + (selectedPkg.isEmpty() ? "Default" : selectedPkg));
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
+
+        availableVoices.clear();
+        availableVoices.addAll(speechController.getAvailableGermanVoices());
+
+        List<String> voiceNames = new ArrayList<>();
+        voiceNames.add("Standard (System-Default Stimme)");
+        String savedVoice = ConfigStore.loadTtsVoiceName(this);
+        int selectedVoiceIdx = 0;
+
+        for (int i = 0; i < availableVoices.size(); i++) {
+            Voice v = availableVoices.get(i);
+            String name = v.getName();
+            voiceNames.add(name);
+            if (name.equalsIgnoreCase(savedVoice)) {
+                selectedVoiceIdx = i + 1;
+            }
+        }
+
+        ArrayAdapter<String> voiceAdapter = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, voiceNames);
+        voiceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        ttsVoiceSpinner.setAdapter(voiceAdapter);
+        ttsVoiceSpinner.setSelection(selectedVoiceIdx, false);
+
+        ttsVoiceSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (!ttsUiReady) return;
+                String selectedVoiceName = (position > 0 && position <= availableVoices.size())
+                        ? availableVoices.get(position - 1).getName()
+                        : "";
+                speechController.setVoiceName(selectedVoiceName);
+                status("Stimme gewählt: " + (selectedVoiceName.isEmpty() ? "Standard" : selectedVoiceName));
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
+
+        ttsUiReady = true;
     }
 
     private void loadProviderFields(String provider) {
@@ -195,6 +326,18 @@ public class MainActivity extends Activity {
             startAfterOverlayPermission = false;
             requestScreenCapture();
         }
+        if (speechController != null) {
+            setupTtsSpinners();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (speechController != null) {
+            speechController.shutdown();
+            speechController = null;
+        }
+        super.onDestroy();
     }
 
     private void requestScreenCapture() {

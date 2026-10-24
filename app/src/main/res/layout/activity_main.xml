@@ -112,6 +112,73 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
+            android:text="Sprachausgabe &amp; TTS-Stimmen"
+            android:textColor="#B9B9B9"
+            android:textSize="13sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="TTS Engine"
+            android:textColor="#888888"
+            android:textSize="11sp" />
+
+        <Spinner
+            android:id="@+id/ttsEngineSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:spinnerMode="dropdown" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Deutsche Stimme"
+            android:textColor="#888888"
+            android:textSize="11sp" />
+
+        <Spinner
+            android:id="@+id/ttsVoiceSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:spinnerMode="dropdown" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/ttsSettingsButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="SYSTEM TTS-EINSTELLUNGEN"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/speechResetButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:text="RESET AUDIO-PARM"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/speechTestButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="TESTANSAGE (OHNE API-KEY)" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
             android:text="Smart-Auto beobachtet Bildschirmänderungen lokal und sendet nur bei relevanten, stabilen Zustandswechseln ein Bild an die gewählte KI. ANALYSE bleibt als manueller Override verfügbar. Über ⋮ im Overlay findest du Auto, Stumm, Status und Neue Partie / Gedächtnis zurücksetzen."
             android:textColor="#B0B0B0"
             android:textSize="14sp" />
