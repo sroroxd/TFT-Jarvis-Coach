@@ -30,6 +30,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Isolated device voice preview; release application ID and signing unchanged.
+            applicationIdSuffix '.voicetest'
+            versionNameSuffix '-voice-test'
+        }
         release {
             signingConfig signingConfigs.stableRelease
         }
