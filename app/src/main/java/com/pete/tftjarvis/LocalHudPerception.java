@@ -113,7 +113,9 @@ final class LocalHudPerception implements AutoCloseable {
         }
     }
 
-    private static final Pattern STAGE_PATTERN = Pattern.compile("([1-9]-[1-9])");
+    private static final Pattern STAGE_PATTERN = Pattern.compile("(?i)^(?:(?:STAGE|RUNDE)\s*)?([1-9]-[1-9])$");
+    private static final Pattern LEVEL_TOKEN_PATTERN = Pattern.compile("(?i)^(?:(?:LVL\.?|LEVEL|L)\s*)?([0-9]{1,2})$");
+    private static final Pattern GOLD_TOKEN_PATTERN = Pattern.compile("(?i)^\$?\s*([0-9]{1,3})\s*(?:G|GOLD)?$");
 
     private TextRecognizer recognizer;
 
@@ -228,8 +230,9 @@ final class LocalHudPerception implements AutoCloseable {
                 .replace('.', '-')
                 .replace(':', '-')
                 .replace('_', '-');
+        cleaned = cleaned.replaceAll("\\s*-\\s*", "-");
         Matcher m = STAGE_PATTERN.matcher(cleaned);
-        if (m.find()) {
+        if (m.matches()) {
             return m.group(1);
         }
         return null;
@@ -272,15 +275,16 @@ final class LocalHudPerception implements AutoCloseable {
         String cleaned = raw.trim();
         if (cleaned.isEmpty()) return null;
 
-        String digits = cleaned.replaceAll("[^0-9]", "");
-        if (digits.isEmpty() || digits.length() > 3) return null;
-
+        // OCR tokens must match the WHOLE expected HUD label. Stripping all
+        // non-digits would turn "Ashe 5", "XP 4" or unrelated UI text into
+        // falsely confirmed level/gold readings.
+        Pattern pattern = (min == 1 && max == 10)
+                ? LEVEL_TOKEN_PATTERN : GOLD_TOKEN_PATTERN;
+        Matcher match = pattern.matcher(cleaned);
+        if (!match.matches()) return null;
         try {
-            int parsed = Integer.parseInt(digits);
-            if (parsed >= min && parsed <= max) {
-                return parsed;
-            }
-            return null;
+            int parsed = Integer.parseInt(match.group(1));
+            return (parsed >= min && parsed <= max) ? parsed : null;
         } catch (NumberFormatException ignored) {
             return null;
         }
