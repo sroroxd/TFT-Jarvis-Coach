@@ -34,4 +34,13 @@ final class OverlayMessageFormatter {
         if (next.equalsIgnoreCase(concise)) return concise;
         return concise + "\nNächster Schritt: " + next;
     }
+
+    static String transientFailureMessage(Exception error) {
+        String message = error.getMessage() == null ? "" : error.getMessage().toLowerCase(Locale.ROOT);
+        if (error instanceof java.net.SocketTimeoutException || message.contains("zu langsam")
+                || message.contains("timed out") || message.contains("timeout")) {
+            return "Zeitüberschreitung – KI-Antwort dauerte zu lange";
+        }
+        return "KI vorübergehend nicht verfügbar – später erneut versuchen";
+    }
 }
