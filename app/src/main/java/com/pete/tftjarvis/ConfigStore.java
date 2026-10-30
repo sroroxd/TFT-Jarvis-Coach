@@ -25,6 +25,10 @@ public final class ConfigStore {
     private static final String P_PROVIDER = "provider";
     private static final String P_SMART_AUTO = "smart_auto";
     private static final String P_SPEECH_MUTED = "speech_muted";
+    private static final String P_TTS_ENGINE = "tts_engine";
+    private static final String P_TTS_VOICE = "tts_voice";
+    private static final String P_SPEECH_RATE = "speech_rate";
+    private static final String P_SPEECH_PITCH = "speech_pitch";
 
     public static final String PROVIDER_GEMINI = "GEMINI";
     public static final String PROVIDER_OPENAI = "OPENAI";
@@ -97,6 +101,38 @@ public final class ConfigStore {
 
     public static void saveSpeechMuted(Context context, boolean muted) {
         prefs(context).edit().putBoolean(P_SPEECH_MUTED, muted).apply();
+    }
+
+    public static String loadTtsEnginePackage(Context context) {
+        return prefs(context).getString(P_TTS_ENGINE, "");
+    }
+
+    public static void saveTtsEnginePackage(Context context, String enginePackage) {
+        prefs(context).edit().putString(P_TTS_ENGINE, enginePackage != null ? enginePackage.trim() : "").apply();
+    }
+
+    public static String loadTtsVoiceName(Context context) {
+        return prefs(context).getString(P_TTS_VOICE, "");
+    }
+
+    public static void saveTtsVoiceName(Context context, String voiceName) {
+        prefs(context).edit().putString(P_TTS_VOICE, voiceName != null ? voiceName.trim() : "").apply();
+    }
+
+    public static float loadSpeechRate(Context context) {
+        return prefs(context).getFloat(P_SPEECH_RATE, 1.0f);
+    }
+
+    public static void saveSpeechRate(Context context, float rate) {
+        prefs(context).edit().putFloat(P_SPEECH_RATE, Math.max(0.5f, Math.min(2.0f, rate))).apply();
+    }
+
+    public static float loadSpeechPitch(Context context) {
+        return prefs(context).getFloat(P_SPEECH_PITCH, 1.0f);
+    }
+
+    public static void saveSpeechPitch(Context context, float pitch) {
+        prefs(context).edit().putFloat(P_SPEECH_PITCH, Math.max(0.5f, Math.min(2.0f, pitch))).apply();
     }
 
     private static String normalizeProvider(String provider) {
