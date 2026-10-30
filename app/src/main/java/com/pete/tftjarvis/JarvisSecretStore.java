@@ -27,6 +27,14 @@ final class JarvisSecretStore {
     private static final String ENCRYPTED = "api_key_ciphertext";
     private static final String IV = "api_key_iv";
     private static final String ENABLED = "explicit_cost_consent";
+    private static final String PROVIDER = "ai_provider";
+    static final String GEMINI = "gemini";
+    static final String OPENAI = "openai";
+
+    String provider(Context context) {
+        String saved = prefs(context).getString(PROVIDER, OPENAI);
+        return GEMINI.equals(saved) ? GEMINI : OPENAI;
+    }
 
     boolean isEnabled(Context context) {
         return prefs(context).getBoolean(ENABLED, false);
@@ -36,7 +44,11 @@ final class JarvisSecretStore {
         return prefs(context).contains(ENCRYPTED) && isEnabled(context);
     }
 
-    synchronized void saveAndEnable(Context context, String key) throws GeneralSecurityException, IOException {
+    synchronized void saveAndEnable(Context context, String key, String provider)
+            throws GeneralSecurityException, IOException {
+        if (!GEMINI.equals(provider) && !OPENAI.equals(provider)) {
+            throw new IllegalArgumentException("Unbekannter KI-Dienst.");
+        }
         if (key == null || key.trim().length() < 12 || key.length() > 1024) {
             throw new IllegalArgumentException("Kein gültiger API-Schlüssel eingegeben.");
         }
@@ -46,6 +58,7 @@ final class JarvisSecretStore {
         prefs(context).edit()
                 .putString(ENCRYPTED, Base64.encodeToString(ciphertext, Base64.NO_WRAP))
                 .putString(IV, Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
+                .putString(PROVIDER, provider)
                 .putBoolean(ENABLED, true)
                 .apply();
     }
@@ -64,7 +77,8 @@ final class JarvisSecretStore {
     }
 
     synchronized void disableAndClear(Context context) {
-        prefs(context).edit().remove(ENCRYPTED).remove(IV).putBoolean(ENABLED, false).commit();
+        prefs(context).edit().remove(ENCRYPTED).remove(IV).remove(PROVIDER)
+                .putBoolean(ENABLED, false).commit();
         try {
             KeyStore store = KeyStore.getInstance("AndroidKeyStore");
             store.load(null);
