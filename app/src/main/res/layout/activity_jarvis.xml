@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="#080E17">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="38dp"
+            android:text="Jarvis"
+            android:textColor="@color/accent"
+            android:textStyle="bold"
+            android:textSize="40sp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="DEIN PERSÖNLICHER ASSISTENT"
+            android:letterSpacing="0.10"
+            android:textColor="#B5C3D4"
+            android:textSize="12sp" />
+        <TextView
+            android:id="@+id/jarvisStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:text="LOKAL BEREIT"
+            android:textColor="#A4DBCC"
+            android:textSize="13sp" />
+        <TextView
+            android:id="@+id/jarvisOutput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:minHeight="130dp"
+            android:background="@drawable/panel_bg"
+            android:padding="18dp"
+            android:text="Jarvis bereit."
+            android:textColor="@color/white"
+            android:textSize="18sp" />
+        <EditText
+            android:id="@+id/jarvisCommand"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:minHeight="56dp"
+            android:hint="Befehl an Jarvis …"
+            android:inputType="textCapSentences"
+            android:imeOptions="actionDone"
+            android:singleLine="true"
+            android:textColor="@color/white"
+            android:textColorHint="#8FA1B5" />
+        <Button
+            android:id="@+id/jarvisExecuteButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="52dp"
+            android:text="AUSFÜHREN" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+            <Button
+                android:id="@+id/jarvisHelpButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="HILFE" />
+            <Button
+                android:id="@+id/jarvisStatusButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="STATUS" />
+            <Button
+                android:id="@+id/jarvisMuteButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="STUMM" />
+        </LinearLayout>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="30dp"
+            android:text="Kern-Vorschau · Lokale Befehle ohne Konto, Mikrofon- oder Bildschirmfreigabe. Weitere Fähigkeiten folgen erst nach Prüfung."
+            android:textSize="13sp"
+            android:textColor="#8FA1B5" />
+    </LinearLayout>
+</ScrollView>
