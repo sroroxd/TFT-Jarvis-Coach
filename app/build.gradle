@@ -31,8 +31,8 @@ android {
 
     buildTypes {
         debug {
-            // The Jarvis preview installs next to the existing TFT Coach.
-            applicationIdSuffix '.jarvispreview'
+            // Version-specific test package avoids CI debug-signature clashes with older previews.
+            applicationIdSuffix '.jarvis0913'
             versionNameSuffix '-preview'
         }
         release {
