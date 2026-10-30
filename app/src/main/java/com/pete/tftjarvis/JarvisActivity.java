@@ -19,8 +19,8 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import com.pete.tftjarvis.core.JarvisCoreEngine;
-import com.pete.tftjarvis.core.LocalControlCapability;
+import dev.jarvis.core.JarvisCoreEngine;
+import dev.jarvis.core.LocalControlCapability;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
