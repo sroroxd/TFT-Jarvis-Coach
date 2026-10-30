@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 35
-        versionName '0.9.5-beta6'
+        versionCode 36
+        versionName '0.9.6-jarviscore1'
     }
 
     // Stable release signing is reused for every subsequent Android APK update.
@@ -30,6 +30,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // The Jarvis preview installs next to the existing TFT Coach.
+            applicationIdSuffix '.jarvispreview'
+            versionNameSuffix '-preview'
+        }
         release {
             signingConfig signingConfigs.stableRelease
         }
