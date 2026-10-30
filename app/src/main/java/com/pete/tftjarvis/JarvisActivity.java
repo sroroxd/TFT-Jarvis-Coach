@@ -126,6 +126,10 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                             || description.contains("nicht erlaubt")) {
                         stopHandsFree();
                         output.setText(description);
+                    } else if (description.startsWith("Keine Sprache erkannt")) {
+                        // Silence is normal, not a fault; keep the foreground loop alive.
+                        speechErrorStreak = 0;
+                        queueNextListen(850L);
                     } else if (++speechErrorStreak > 5) {
                         stopHandsFree();
                         output.setText("Spracherkennung mehrfach unterbrochen. Freisprechen erneut aktivieren.");
