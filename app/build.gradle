@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 42
-        versionName '0.9.12-bargein-experimental'
+        versionCode 43
+        versionName '0.9.13-bargein-recovery'
     }
 
     // Stable release signing is reused for every subsequent Android APK update.
