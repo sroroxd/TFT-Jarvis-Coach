@@ -1,5 +1,6 @@
 package com.pete.tftjarvis;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -7,6 +8,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
@@ -510,8 +512,14 @@ public class ScreenCaptureService extends Service {
             if (tts != null && shouldSpeak(phase, call, priority, confidence, manualRequest)) {
                 tts.speak(call, TextToSpeech.QUEUE_FLUSH, null, "tft-call");
             }
-            NotificationManager nm = getSystemService(NotificationManager.class);
-            nm.notify(NOTIFICATION_ID, buildNotification(call));
+            // Android 13+ permits updating a regular notification only with consent.
+            // A denied permission must not interrupt the optional TFT coaching call.
+            if (Build.VERSION.SDK_INT < 33
+                    || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                    == PackageManager.PERMISSION_GRANTED) {
+                NotificationManager nm = getSystemService(NotificationManager.class);
+                if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification(call));
+            }
         });
     }
 
