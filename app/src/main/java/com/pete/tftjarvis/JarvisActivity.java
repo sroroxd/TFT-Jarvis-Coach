@@ -129,8 +129,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
             }
             updateStatus();
         }));
-        output.setText("JARVIS lokal bereit. Lokale Befehle funktionieren ohne KI. "
-                + "Für eine separate, möglicherweise kostenpflichtige KI: KI EINRICHTEN.");
+        output.setText("Bereit. Was kann ich für dich tun?");
     }
 
     private void runCommand(String command) {
