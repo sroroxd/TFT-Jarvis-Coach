@@ -161,7 +161,7 @@
                 android:background="@drawable/jarvis_action_primary"
                 android:backgroundTint="@null"
                 android:stateListAnimator="@null"
-                android:text="SPRECHEN"
+                android:text="FREISPRECHEN AN"
                 android:textAllCaps="false"
                 android:textColor="#061923"
                 android:fontFamily="sans-serif-medium"
@@ -293,7 +293,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="Freisprechen: Nach Freigabe hört JARVIS nur bei geöffneter App auf „Jarvis, ...“. Automatische KI-Sprachfragen benötigen zusätzliche Einwilligung und können kostenpflichtig sein."
+            android:text="Freisprechen: Nach Freigabe kannst du bei geöffneter App ohne Aktivierungswort sprechen. Freie KI-Antworten benötigen einen eingerichteten Anbieter und separate Zustimmung zur Datenübertragung; Kosten sind möglich. Während JARVIS spricht, ist das Mikrofon derzeit pausiert."
             android:lineSpacingExtra="2dp"
             android:textSize="11sp"
             android:textColor="#7690A0"/>
