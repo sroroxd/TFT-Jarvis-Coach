@@ -25,6 +25,9 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     private TextView output;
     private TextView systemStatus;
     private Button muteButton;
+    private Button voiceButton;
+    private JarvisSpeechInput voiceInput;
+    private String speechState = "BEREIT";
     private JarvisCoreEngine core;
     private TextToSpeech tts;
     private boolean speechMuted;
@@ -39,6 +42,27 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         output = findViewById(R.id.jarvisOutput);
         systemStatus = findViewById(R.id.jarvisStatus);
         muteButton = findViewById(R.id.jarvisMuteButton);
+        voiceButton = findViewById(R.id.jarvisVoiceButton);
+        voiceInput = new JarvisSpeechInput(this, new JarvisSpeechInput.Callbacks() {
+            @Override public void onSpeechState(String state) {
+                speechState = state;
+                updateStatus();
+            }
+
+            @Override public void onRecognizedText(String text) {
+                commandInput.setText(text);
+                runCommand(text);
+            }
+
+            @Override public void onSpeechError(String description) {
+                output.setText(description);
+                updateStatus();
+            }
+        });
+        voiceButton.setOnClickListener(v -> {
+            if (tts != null) tts.stop();
+            voiceInput.startOrCancel();
+        });
 
         speechMuted = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(MUTED, false);
         core = new JarvisCoreEngine();
@@ -95,8 +119,14 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     private void updateStatus() {
         if (systemStatus == null || muteButton == null) return;
         systemStatus.setText("LOKAL BEREIT  ·  "
-                + (speechMuted ? "STUMM" : (ttsReady ? "SPRACHE AKTIV" : "SPRACHE WIRD GELADEN")));
+                + (voiceInput != null && voiceInput.isListening()
+                    ? speechState
+                    : (speechMuted ? "STUMM" : (ttsReady ? "SPRACHE AKTIV" : "SPRACHE WIRD GELADEN"))));
         muteButton.setText(speechMuted ? "LAUT" : "STUMM");
+        if (voiceButton != null) {
+            voiceButton.setText(voiceInput != null && voiceInput.isListening()
+                    ? "ZUHÖREN ABBRECHEN" : "SPRECHEN");
+        }
     }
 
     @Override public boolean isMuted() { return speechMuted; }
@@ -113,6 +143,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     public void cancelCurrentTask() {
         // P0 supports local commands and speech, not external running jobs.
         if (tts != null) tts.stop();
+        if (voiceInput != null) voiceInput.cancel();
     }
 
     @Override
@@ -123,7 +154,15 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                           int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (voiceInput != null) voiceInput.onPermissionResult(requestCode, grantResults);
+    }
+
+    @Override
     protected void onDestroy() {
+        if (voiceInput != null) voiceInput.cancel();
         if (tts != null) {
             tts.stop();
             tts.shutdown();
