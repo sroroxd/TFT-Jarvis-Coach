@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 36
-        versionName '0.9.6-jarviscore1'
+        versionCode 37
+        versionName '0.9.7-jarvisvoice1'
     }
 
     // Stable release signing is reused for every subsequent Android APK update.
