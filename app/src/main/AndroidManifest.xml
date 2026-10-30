@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Microphone permission is requested only after an explicit tap on SPRECHEN.
-         No network, TFT capture, overlay or notification permission is used. -->
+    <!-- Microphone is requested at runtime only after SPRECHEN.
+         INTERNET is used ONLY on a separate KI FRAGEN action after explicit
+         account setup and cost consent. No TFT capture or overlay access. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <queries>
         <intent>
