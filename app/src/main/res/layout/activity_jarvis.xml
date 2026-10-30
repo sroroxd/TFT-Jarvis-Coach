@@ -57,6 +57,13 @@
             android:textColor="@color/white"
             android:textColorHint="#8FA1B5" />
         <Button
+            android:id="@+id/jarvisVoiceButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:minHeight="54dp"
+            android:text="SPRECHEN" />
+        <Button
             android:id="@+id/jarvisExecuteButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -91,7 +98,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="30dp"
-            android:text="Kern-Vorschau · Lokale Befehle ohne Konto, Mikrofon- oder Bildschirmfreigabe. Weitere Fähigkeiten folgen erst nach Prüfung."
+            android:text="Kern-Vorschau · Texteingabe offline. Mikrofon nur nach Tippen auf SPRECHEN und expliziter Android-Freigabe; ausschließlich lokale Spracherkennung, falls das Gerät sie anbietet. Keine KI-Anbindung und keine Bildschirmfreigabe."
             android:textSize="13sp"
             android:textColor="#8FA1B5" />
     </LinearLayout>
