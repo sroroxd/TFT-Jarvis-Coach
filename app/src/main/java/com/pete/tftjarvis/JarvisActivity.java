@@ -108,8 +108,15 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         aiSendButton = findViewById(R.id.jarvisAiSendButton);
 
         speechMuted = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(MUTED, false);
-        handsFreeEnabled = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(HANDSFREE_PREF, false);
-        voiceAiConsent = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(VOICE_AI_PREF, false);
+        // Consent to an open microphone and automatic voice-to-cloud requests
+        // is per foreground app session, never silently restored after process death.
+        // Previous builds persisted these flags; revoke them on every cold launch.
+        handsFreeEnabled = false;
+        voiceAiConsent = false;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .remove(HANDSFREE_PREF)
+                .remove(VOICE_AI_PREF)
+                .apply();
         core = new JarvisCoreEngine();
         core.register(new LocalControlCapability(this));
 
