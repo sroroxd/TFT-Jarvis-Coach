@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 41
-        versionName '0.9.11-voicefree-preview'
+        versionCode 42
+        versionName '0.9.12-bargein-experimental'
     }
 
     // Stable release signing is reused for every subsequent Android APK update.
