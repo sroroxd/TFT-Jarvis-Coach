@@ -16,6 +16,16 @@ public class JarvisWakePhraseTest {
         assertNull(JarvisWakePhrase.extract(""));
     }
 
+    @Test public void wakewordIsOptionalInUserActivatedConversation() {
+        assertEquals("Wie heißt du?", JarvisWakePhrase.freeSpeech("Wie heißt du?"));
+        assertEquals("Und warum?", JarvisWakePhrase.freeSpeech("Und warum?"));
+        assertEquals("Erkläre mir das genauer", JarvisWakePhrase.freeSpeech("Erkläre mir das genauer"));
+        assertEquals("Status", JarvisWakePhrase.freeSpeech("Jarvis, Status"));
+        assertEquals("Was hast du gesagt?", JarvisWakePhrase.freeSpeech("Was hast du gesagt?"));
+        assertEquals("", JarvisWakePhrase.freeSpeech(null));
+        assertEquals("", JarvisWakePhrase.freeSpeech("  "));
+    }
+
     @Test public void autoCloudRequiresExplicitConsentAndBudgetGate() {
         assertFalse(JarvisWakePhrase.autoAiAllowed(false, true, 0, 10000, 0));
         assertFalse(JarvisWakePhrase.autoAiAllowed(true, false, 0, 10000, 0));
