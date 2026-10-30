@@ -311,12 +311,18 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                 && !normalized.equals("abbrechen")
                 && !normalized.equals("jarvis abbrechen")) {
             speak(result.message);
+        } else if (handsFreeEnabled) {
+            voiceWaitingForReply = false;
+            queueNextListen(RESTART_DELAY_MS);
         }
     }
 
-    /** Only the dedicated KI FRAGEN button can transmit text to the API. */
+    /** Manual KI FRAGEN, or explicitly opt-in foreground hands-free + wake phrase. */
     private void askAi() {
-        String question = commandInput.getText().toString().trim();
+        askAi(commandInput.getText().toString().trim());
+    }
+
+    private void askAi(String question) {
         if (question.isEmpty() || question.length() > 4000) {
             output.setText("Bitte eine Frage mit höchstens 4000 Zeichen eingeben.");
             return;
@@ -377,7 +383,9 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                     output.setText(reply);
                     speak(reply);
                 } else {
-                    output.setText(problem == null ? "Keine KI-Antwort empfangen." : problem);
+                    String message = problem == null ? "Keine KI-Antwort empfangen." : problem;
+                    output.setText(message);
+                    if (voiceWaitingForReply) speak(message);
                 }
             });
         });
@@ -393,7 +401,9 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         explanation.setText("Optionaler persönlicher OpenAI-API-Zugang. "
                 + "API-Nutzung kann unabhängig von ChatGPT Plus Geld kosten. "
                 + "JARVIS setzt derzeit KEIN hartes Kostenlimit: Limits im OpenAI-Platform-Konto festlegen. "
-                + "Nur ein Tipp auf KI FRAGEN überträgt die Eingabe und bis zu vier Gesprächsrunden an OpenAI. "
+                + "KI FRAGEN sendet deine Eingabe. Freisprechen kann erst nach SEPARATER "
+                + "Zustimmung und nur nach dem Ansprechnamen „Jarvis“ Fragen übertragen; "
+                + "dabei entstehen möglicherweise weitere Kosten. "
                 + "Keine automatische Verbindung zu diesem Chat oder dessen Erinnerung. "
                 + "Ein lokaler Geräteschlüssel ist kein Ersatz für serverseitige Schlüsselverwaltung.");
         layout.addView(explanation);
@@ -421,6 +431,9 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                         cancelAiRequest();
                         sessionTurns.clear();
                         keyStore.disableAndClear(this);
+                        voiceAiConsent = false;
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                .putBoolean(VOICE_AI_PREF, false).apply();
                         output.setText("Eigener API-Zugang deaktiviert und verschlüsselter Schlüssel entfernt.");
                         updateStatus();
                     });
@@ -434,6 +447,9 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                     }
                     try {
                         keyStore.saveAndEnable(this, field.getText().toString());
+                        voiceAiConsent = false;
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                .putBoolean(VOICE_AI_PREF, false).apply();
                         sessionTurns.clear();
                         output.setText("Separate KI aktiviert. Erst KI FRAGEN sendet deine Frage; "
                                 + "die Verbindung ist noch nicht auf deinem S24 getestet.");
@@ -457,8 +473,17 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     }
 
     private void speak(String text) {
+        if (handsFreeEnabled) {
+            voiceHandler.removeCallbacks(voiceRestart);
+            if (voiceInput != null && voiceInput.isListening()) voiceInput.cancel();
+            voiceWaitingForReply = true;
+        }
         if (!speechMuted && ttsReady && tts != null) {
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis-response");
+            speechInProgress = true;
+            int status = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis-response");
+            if (status == TextToSpeech.ERROR) finishSpeaking();
+        } else {
+            finishSpeaking();
         }
     }
 
@@ -466,14 +491,14 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         if (systemStatus == null || muteButton == null) return;
         String aiMode = aiBusy ? "KI ANFRAGE LÄUFT"
                 : (keyStore.isConfigured(this) ? "KI OPT-IN" : "KI AUS");
-        systemStatus.setText("LOKAL BEREIT · " + aiMode + " · "
-                + (voiceInput != null && voiceInput.isListening()
-                    ? speechState
-                    : (speechMuted ? "STUMM" : (ttsReady ? "SPRACHE AKTIV" : "SPRACHE WIRD GELADEN"))));
+        String voiceMode = handsFreeEnabled
+                ? (voiceInput != null && voiceInput.isListening() ? "MIKROFON AN"
+                    : (speechInProgress ? "JARVIS SPRICHT" : "FREISPRECHEN BEREIT"))
+                : (speechMuted ? "STUMM" : (ttsReady ? "SPRACHE AKTIV" : "SPRACHE WIRD GELADEN"));
+        systemStatus.setText("LOKAL BEREIT · " + aiMode + " · " + voiceMode);
         muteButton.setText(speechMuted ? "LAUT" : "STUMM");
         if (voiceButton != null) {
-            voiceButton.setText(voiceInput != null && voiceInput.isListening()
-                    ? "ZUHÖREN ABBRECHEN" : "SPRECHEN");
+            voiceButton.setText(handsFreeEnabled ? "FREISPRECHEN AUS" : "FREISPRECHEN AN");
         }
         if (aiConfigButton != null) {
             aiConfigButton.setText(keyStore.isConfigured(this) ? "KI VERWALTEN" : "KI EINRICHTEN");
@@ -502,7 +527,8 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
 
     @Override
     public String currentStatus() {
-        return "JARVIS ist lokal bereit. Sprachausgabe "
+        return "JARVIS ist lokal bereit. Freisprechen " + (handsFreeEnabled ? "ein. " : "aus. ")
+                + "Sprachausgabe "
                 + (speechMuted ? "stumm. " : (ttsReady ? "aktiv. " : "nicht verfügbar. "))
                 + (keyStore.isConfigured(this)
                     ? "Eigene kostenpflichtige KI-Verbindung aktiviert. "
@@ -517,14 +543,28 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        appVisible = true;
+        if (handsFreeEnabled) queueNextListen(500L);
+        updateStatus();
+    }
+
+    @Override
     protected void onStop() {
-        if (voiceInput != null && voiceInput.isListening()) voiceInput.cancel();
-        cancelAiRequest(); // No background API actions in this preview.
+        appVisible = false;
+        voiceHandler.removeCallbacks(voiceRestart);
+        if (voiceInput != null) voiceInput.cancel();
+        if (tts != null) tts.stop();
+        speechInProgress = false;
+        cancelAiRequest(); // No microphone or cloud jobs while backgrounded.
         super.onStop();
     }
 
     @Override
     protected void onDestroy() {
+        appVisible = false;
+        voiceHandler.removeCallbacks(voiceRestart);
         cancelCurrentTask();
         aiExecutor.shutdownNow();
         if (tts != null) {
