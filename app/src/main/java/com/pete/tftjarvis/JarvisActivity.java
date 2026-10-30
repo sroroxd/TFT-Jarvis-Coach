@@ -12,6 +12,8 @@ import android.speech.tts.UtteranceProgressListener;
 import android.text.InputType;
 import android.view.inputmethod.EditorInfo;
 import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
+import android.view.View;
 import android.widget.Spinner;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -76,6 +78,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     private final JarvisSecretStore keyStore = new JarvisSecretStore();
     private final JarvisAiClient aiClient = new JarvisAiClient();
     private final JarvisGeminiClient geminiClient = new JarvisGeminiClient();
+    private final JarvisHuggingFaceClient huggingFaceClient = new JarvisHuggingFaceClient();
     private final ExecutorService aiExecutor = Executors.newSingleThreadExecutor();
     private final List<String[]> sessionTurns = new ArrayList<>();
     private JarvisAiClient.CancelToken currentAiToken;
@@ -244,6 +247,12 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         output.setText("Bereit. Was kann ich für dich tun?");
     }
 
+    private static String providerLabel(String provider) {
+        if (JarvisSecretStore.GEMINI.equals(provider)) return "Google Gemini";
+        if (JarvisSecretStore.HUGGING_FACE.equals(provider)) return "Hugging Face";
+        return "OpenAI";
+    }
+
     private void showHandsFreeConsent() {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -261,7 +270,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
 
         CheckBox aiPermission = new CheckBox(this);
         aiPermission.setText("Gesprochene Fragen und Gesprächskontext ohne Aktivierungswort an "
-                + (JarvisSecretStore.GEMINI.equals(keyStore.provider(this)) ? "Google Gemini" : "OpenAI")
+                + providerLabel(keyStore.provider(this))
                 + " senden (Kontingent kann kostenlos sein, Kosten sind nicht ausgeschlossen; "
                 + "maximal 12 automatische Anfragen pro App-Sitzung).");
         aiPermission.setEnabled(keyStore.isConfigured(this));
@@ -427,6 +436,8 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
             return;
         }
         final String provider = keyStore.provider(this);
+        final String hfModel = JarvisSecretStore.HUGGING_FACE.equals(provider)
+                ? keyStore.huggingFaceModel(this) : null;
         final String apiKey;
         try {
             apiKey = keyStore.load(this);
@@ -444,15 +455,19 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         currentAiToken = token;
         aiBusy = true;
         output.setText("KI-Anfrage läuft. Frage und kurzer Gesprächskontext gehen an "
-                + (JarvisSecretStore.GEMINI.equals(provider) ? "Google Gemini." : "OpenAI."));
+                + providerLabel(provider) + ".");
         updateStatus();
         currentAiTask = aiExecutor.submit(() -> {
             String answer = null;
             String error = null;
             try {
-                answer = JarvisSecretStore.GEMINI.equals(provider)
-                        ? geminiClient.answer(apiKey, question, context, token)
-                        : aiClient.answer(apiKey, question, context, token);
+                if (JarvisSecretStore.HUGGING_FACE.equals(provider)) {
+                    answer = huggingFaceClient.answer(apiKey, hfModel, question, context, token);
+                } else if (JarvisSecretStore.GEMINI.equals(provider)) {
+                    answer = geminiClient.answer(apiKey, question, context, token);
+                } else {
+                    answer = aiClient.answer(apiKey, question, context, token);
+                }
             } catch (IOException e) {
                 error = e.getMessage();
             } catch (RuntimeException e) {
@@ -487,25 +502,44 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         layout.setPadding(margin, margin / 2, margin, margin / 2);
 
         TextView explanation = new TextView(this);
-        explanation.setText("Wähle Gemini oder OpenAI und verwende deinen eigenen API-Schlüssel. "
-                + "Für Gemini kann ein begrenztes kostenloses Kontingent verfügbar sein. "
-                + "Das garantiert NICHT, dass deinem Google-Konto keine Kosten entstehen: "
-                + "prüfe Abrechnung und Kontingente selbst. Es gibt keine automatische Umschaltung "
-                + "auf einen kostenpflichtigen Anbieter. "
-                + "JARVIS besitzt kein hartes Euro-Kostenlimit. "
-                + "KI FRAGEN sendet die Eingabe; freie Sprache wird erst nach weiterer "
-                + "Einwilligung gesendet. Keine Verbindung zu deinem ChatGPT-Konto.");
+        explanation.setText("Wähle Gemini, OpenAI oder Hugging Face und verwende "
+                + "deinen eigenen API-Schlüssel bzw. Hugging-Face-Token. "
+                + "Kostenlose Kontingente können begrenzt oder nicht verfügbar sein. "
+                + "Kostenfreiheit ist NICHT garantiert: prüfe deine Abrechnung selbst. "
+                + "Es gibt keinen automatischen kostenpflichtigen Fallback und kein "
+                + "hartes Euro-Kostenlimit. KI FRAGEN sendet die Eingabe; freie Sprache "
+                + "erst nach weiterer Zustimmung. Keine Verbindung zu ChatGPT.");
         layout.addView(explanation);
 
         Spinner providerPicker = new Spinner(this);
         ArrayAdapter<String> providerOptions = new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_item, new String[] {
-                "Google Gemini (Gratis-Kontingent möglich)", "OpenAI (mögliche API-Kosten)"});
+                "Google Gemini (Gratis-Kontingent möglich)",
+                "OpenAI (mögliche API-Kosten)",
+                "Hugging Face (Kontingent prüfen)"});
         providerOptions.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         providerPicker.setAdapter(providerOptions);
+        String currentProvider = keyStore.provider(this);
         providerPicker.setSelection(keyStore.isConfigured(this)
-                && JarvisSecretStore.OPENAI.equals(keyStore.provider(this)) ? 1 : 0);
+                ? (JarvisSecretStore.HUGGING_FACE.equals(currentProvider) ? 2
+                    : (JarvisSecretStore.OPENAI.equals(currentProvider) ? 1 : 0)) : 0);
         layout.addView(providerPicker);
+
+        EditText modelField = new EditText(this);
+        modelField.setSingleLine(true);
+        modelField.setHint("Hugging-Face-Modell: Organisation/Modell");
+        modelField.setText(keyStore.huggingFaceModel(this));
+        modelField.setInputType(InputType.TYPE_CLASS_TEXT);
+        layout.addView(modelField);
+        modelField.setVisibility(
+                providerPicker.getSelectedItemPosition() == 2 ? View.VISIBLE : View.GONE);
+        providerPicker.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(
+                    AdapterView<?> parent, View view, int position, long id) {
+                modelField.setVisibility(position == 2 ? View.VISIBLE : View.GONE);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
 
         EditText field = new EditText(this);
         field.setSingleLine(true);
@@ -546,9 +580,14 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                         return;
                     }
                     try {
-                        String selectedProvider = providerPicker.getSelectedItemPosition() == 0
-                                ? JarvisSecretStore.GEMINI : JarvisSecretStore.OPENAI;
-                        keyStore.saveAndEnable(this, field.getText().toString(), selectedProvider);
+                        int selection = providerPicker.getSelectedItemPosition();
+                        String selectedProvider = selection == 2
+                                ? JarvisSecretStore.HUGGING_FACE
+                                : (selection == 0
+                                    ? JarvisSecretStore.GEMINI : JarvisSecretStore.OPENAI);
+                        cancelAiRequest();
+                        keyStore.saveAndEnable(this, field.getText().toString(),
+                                selectedProvider, modelField.getText().toString());
                         voiceAiConsent = false;
                         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                                 .putBoolean(VOICE_AI_PREF, false).apply();
@@ -599,7 +638,9 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         String aiMode = aiBusy ? "KI ANFRAGE LÄUFT"
                 : (keyStore.isConfigured(this)
                         ? (JarvisSecretStore.GEMINI.equals(keyStore.provider(this))
-                            ? "GEMINI EINGERICHTET" : "OPENAI EINGERICHTET")
+                            ? "GEMINI EINGERICHTET"
+                            : (JarvisSecretStore.HUGGING_FACE.equals(keyStore.provider(this))
+                                ? "HUGGING FACE EINGERICHTET" : "OPENAI EINGERICHTET"))
                         : "KI AUS");
         String voiceMode = handsFreeEnabled
                 ? (speechInProgress
