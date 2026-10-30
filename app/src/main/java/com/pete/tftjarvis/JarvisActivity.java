@@ -565,7 +565,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (voiceInput != null) voiceInput.onPermissionResult(requestCode, grantResults);
+        if (voiceInput != null) voiceInput.onPermissionResult(requestCode, grantResults, appVisible && handsFreeEnabled);
     }
 
     @Override
