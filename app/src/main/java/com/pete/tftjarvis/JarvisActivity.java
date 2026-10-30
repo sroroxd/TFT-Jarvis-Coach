@@ -34,7 +34,7 @@ import java.util.concurrent.Future;
 /**
  * JARVIS is a self-contained Android UI. Local commands are always handled offline.
  * The user's separate API account is optional, disabled until explicit consent,
- * and is NEVER automatically triggered by speech or unknown text commands.
+ * and voice-to-cloud use requires a separate, explicit opt-in.
  */
 public final class JarvisActivity extends Activity implements LocalControlCapability.Controls {
     private static final String PREFS = "jarvis_core_preferences";
@@ -50,6 +50,11 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     private boolean voiceAiConsent;
     private boolean appVisible;
     private boolean speechInProgress;
+    private boolean bargeInCapture;
+    private boolean bargeInDetected;
+    private String activeSpeechText = "";
+    private String activeUtteranceId;
+    private long utteranceSequence;
     private boolean voiceWaitingForReply;
     private int speechErrorStreak;
     private int autoAiRequests;
@@ -79,9 +84,11 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     private boolean aiBusy;
 
     private final Runnable voiceRestart = () -> {
-        if (handsFreeEnabled && appVisible && !voiceWaitingForReply
-                && !speechInProgress && !aiBusy && voiceInput != null
-                && !voiceInput.isListening()) {
+        if (canListenNow() && voiceInput != null && !voiceInput.isListening()) {
+            // Keep a microphone session available during TTS for provisional
+            // interruption detection. Not equivalent to acoustic echo cancellation.
+            bargeInCapture = speechInProgress;
+            bargeInDetected = false;
             voiceInput.startOrCancel();
         }
     };
@@ -113,6 +120,17 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
             }
 
             @Override public void onRecognizedText(String text) {
+                boolean capturedDuringTts = bargeInCapture;
+                boolean interruptedFromPartial = bargeInDetected;
+                bargeInCapture = false;
+                bargeInDetected = false;
+                // Never dispatch a transcript captured from our own voice unless
+                // a distinct partial hypothesis already stopped the TTS stream.
+                if (capturedDuringTts && (!interruptedFromPartial
+                        || JarvisBargeInGate.isLikelyEcho(text, activeSpeechText))) {
+                    queueNextListen(450L);
+                    return;
+                }
                 speechErrorStreak = 0;
                 commandInput.setText(text);
                 if (handsFreeEnabled) {
@@ -122,7 +140,17 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                 }
             }
 
+            @Override public void onPartialText(String text) {
+                if (handsFreeEnabled && bargeInCapture && speechInProgress
+                        && JarvisBargeInGate.mightBeInterruption(text, activeSpeechText)) {
+                    bargeInDetected = true;
+                    stopSpeechForBargeIn();
+                }
+            }
+
             @Override public void onSpeechError(String description) {
+                bargeInCapture = false;
+                bargeInDetected = false;
                 if (handsFreeEnabled) {
                     // Android may end a silence-only session without a transcript.
                     // Recover with a delay. Never spin on a missing microphone/engine.
@@ -192,8 +220,12 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         if (tts != null) {
             tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                 @Override public void onStart(String utteranceId) { }
-                @Override public void onDone(String utteranceId) { voiceHandler.post(() -> finishSpeaking()); }
-                @Override public void onError(String utteranceId) { voiceHandler.post(() -> finishSpeaking()); }
+                @Override public void onDone(String utteranceId) {
+                    voiceHandler.post(() -> finishSpeaking(utteranceId));
+                }
+                @Override public void onError(String utteranceId) {
+                    voiceHandler.post(() -> finishSpeaking(utteranceId));
+                }
             });
         }
         output.setText("Bereit. Was kann ich für dich tun?");
@@ -209,7 +241,9 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                 + "Du sprichst frei und ohne Ansprechwort; JARVIS antwortet und hört danach erneut zu. "
                 + "Beim Verlassen der App stoppt das Mikrofon. "
                 + "Dafür wird die lokale Android-Spracherkennung benötigt; dauerhafte Erkennung "
-                + "kann je nach Gerät und Android-Sprachdienst unterbrochen werden.");
+                + "kann je nach Gerät und Android-Sprachdienst unterbrochen werden. "
+                + "Die Unterbrechung laufender Sprachausgabe ist experimentell: "
+                + "ohne geprüfte Echounterdrückung ist sie nicht zuverlässig.");
         panel.addView(explanation);
 
         CheckBox aiPermission = new CheckBox(this);
@@ -251,6 +285,8 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         handsFreeEnabled = false;
         voiceAiConsent = false;
         voiceWaitingForReply = false;
+        bargeInCapture = false;
+        bargeInDetected = false;
         voiceHandler.removeCallbacks(voiceRestart);
         if (voiceInput != null) voiceInput.cancel();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
@@ -260,18 +296,42 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         updateStatus();
     }
 
+    private boolean canListenNow() {
+        return handsFreeEnabled && appVisible && !aiBusy
+                && (!voiceWaitingForReply || speechInProgress);
+    }
+
     private void queueNextListen(long delayMs) {
         voiceHandler.removeCallbacks(voiceRestart);
-        if (handsFreeEnabled && appVisible && !voiceWaitingForReply
-                && !speechInProgress && !aiBusy) {
+        if (canListenNow()) {
             voiceHandler.postDelayed(voiceRestart, Math.max(250L, delayMs));
         }
     }
 
+    private void finishSpeaking(String utteranceId) {
+        // Android may deliver stale completion callbacks after TTS.stop().
+        if (utteranceId != null && utteranceId.equals(activeUtteranceId)) finishSpeaking();
+    }
+
     private void finishSpeaking() {
+        activeUtteranceId = null;
         speechInProgress = false;
         voiceWaitingForReply = false;
+        // Stop a recognizer session that mostly heard the tail of our own TTS.
+        if (bargeInCapture && voiceInput != null && voiceInput.isListening()) voiceInput.cancel();
+        bargeInCapture = false;
+        bargeInDetected = false;
         queueNextListen(RESTART_DELAY_MS);
+        updateStatus();
+    }
+
+    private void stopSpeechForBargeIn() {
+        if (!speechInProgress) return;
+        activeUtteranceId = null;
+        speechInProgress = false;
+        voiceWaitingForReply = false;
+        if (tts != null) tts.stop();
+        output.setText("Unterbrechung erkannt. Ich höre zu.");
         updateStatus();
     }
 
@@ -280,6 +340,12 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         voiceWaitingForReply = true;
         if (request.isEmpty()) {
             voiceWaitingForReply = false;
+            queueNextListen(RESTART_DELAY_MS);
+            return;
+        }
+        if (JarvisBargeInGate.isStopCommand(request)) {
+            voiceWaitingForReply = false;
+            output.setText("Sprachausgabe gestoppt.");
             queueNextListen(RESTART_DELAY_MS);
             return;
         }
@@ -499,12 +565,17 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         if (handsFreeEnabled) {
             voiceHandler.removeCallbacks(voiceRestart);
             if (voiceInput != null && voiceInput.isListening()) voiceInput.cancel();
+            bargeInCapture = false;
+            bargeInDetected = false;
             voiceWaitingForReply = true;
         }
         if (!speechMuted && ttsReady && tts != null) {
             speechInProgress = true;
-            int status = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis-response");
-            if (status == TextToSpeech.ERROR) finishSpeaking();
+            activeSpeechText = text;
+            activeUtteranceId = "jarvis-response-" + (++utteranceSequence);
+            int status = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, activeUtteranceId);
+            if (status == TextToSpeech.ERROR) finishSpeaking(activeUtteranceId);
+            else if (handsFreeEnabled) queueNextListen(280L);
         } else {
             finishSpeaking();
         }
@@ -540,15 +611,24 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     public void setMuted(boolean muted) {
         speechMuted = muted;
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(MUTED, muted).apply();
-        if (muted && tts != null) tts.stop();
+        if (muted && tts != null) {
+            tts.stop();
+            finishSpeaking();
+        }
         updateStatus();
     }
 
     @Override
     public void cancelCurrentTask() {
         if (tts != null) tts.stop();
+        activeUtteranceId = null;
+        speechInProgress = false;
+        bargeInCapture = false;
+        bargeInDetected = false;
+        voiceWaitingForReply = false;
         if (voiceInput != null) voiceInput.cancel();
         cancelAiRequest();
+        queueNextListen(RESTART_DELAY_MS);
     }
 
     @Override
@@ -582,7 +662,10 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         voiceHandler.removeCallbacks(voiceRestart);
         if (voiceInput != null) voiceInput.cancel();
         if (tts != null) tts.stop();
+        activeUtteranceId = null;
         speechInProgress = false;
+        bargeInCapture = false;
+        bargeInDetected = false;
         cancelAiRequest(); // No microphone or cloud jobs while backgrounded.
         voiceWaitingForReply = false;
         super.onStop();
