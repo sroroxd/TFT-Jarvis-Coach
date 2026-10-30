@@ -1,9 +1,14 @@
 package com.pete.tftjarvis;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.content.pm.PackageManager;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.text.InputType;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
@@ -33,6 +38,26 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     private static final String PREFS = "jarvis_core_preferences";
     private static final String MUTED = "speech_muted";
     private static final int MAX_CONTEXT_TURNS = 4;
+    private static final String HANDSFREE_PREF = "foreground_handsfree_enabled";
+    private static final String VOICE_AI_PREF = "voice_ai_explicit_consent";
+    private static final long RESTART_DELAY_MS = 850L;
+
+    private final Handler voiceHandler = new Handler(Looper.getMainLooper());
+    private boolean handsFreeEnabled;
+    private boolean voiceAiConsent;
+    private boolean appVisible;
+    private boolean speechInProgress;
+    private boolean voiceWaitingForReply;
+    private int speechErrorStreak;
+    private int autoAiRequests;
+    private long lastVoiceAiRequestMs;
+    private final Runnable voiceRestart = () -> {
+        if (handsFreeEnabled && appVisible && !voiceWaitingForReply
+                && !speechInProgress && !aiBusy && voiceInput != null
+                && !voiceInput.isListening()) {
+            voiceInput.startOrCancel();
+        }
+    };
 
     private EditText commandInput;
     private TextView output;
@@ -71,6 +96,8 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         aiSendButton = findViewById(R.id.jarvisAiSendButton);
 
         speechMuted = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(MUTED, false);
+        handsFreeEnabled = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(HANDSFREE_PREF, false);
+        voiceAiConsent = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(VOICE_AI_PREF, false);
         core = new JarvisCoreEngine();
         core.register(new LocalControlCapability(this));
 
@@ -81,19 +108,43 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
             }
 
             @Override public void onRecognizedText(String text) {
+                speechErrorStreak = 0;
                 commandInput.setText(text);
-                runCommand(text);
-                // Open questions remain in the text field. No automatic cloud call.
+                if (handsFreeEnabled) {
+                    handleHandsFreeUtterance(text);
+                } else {
+                    runCommand(text);
+                }
             }
 
             @Override public void onSpeechError(String description) {
-                output.setText(description);
+                if (handsFreeEnabled) {
+                    // Android may end a silence-only session without a transcript.
+                    // Recover with a delay. Never spin on a missing microphone/engine.
+                    if (description.contains("nicht verfügbar")
+                            || description.contains("Berechtigung")
+                            || description.contains("nicht erlaubt")) {
+                        stopHandsFree();
+                        output.setText(description);
+                    } else if (++speechErrorStreak > 5) {
+                        stopHandsFree();
+                        output.setText("Spracherkennung mehrfach unterbrochen. Freisprechen erneut aktivieren.");
+                    } else {
+                        queueNextListen(1200L + 650L * speechErrorStreak);
+                    }
+                } else {
+                    output.setText(description);
+                }
                 updateStatus();
             }
         });
         voiceButton.setOnClickListener(v -> {
-            if (tts != null) tts.stop();
-            voiceInput.startOrCancel();
+            if (handsFreeEnabled) {
+                stopHandsFree();
+                output.setText("Freisprechen ausgeschaltet.");
+            } else {
+                showHandsFreeConsent();
+            }
         });
 
         findViewById(R.id.jarvisExecuteButton).setOnClickListener(v -> {
@@ -129,7 +180,126 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
             }
             updateStatus();
         }));
+        if (tts != null) {
+            tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override public void onStart(String utteranceId) { }
+                @Override public void onDone(String utteranceId) { voiceHandler.post(() -> finishSpeaking()); }
+                @Override public void onError(String utteranceId) { voiceHandler.post(() -> finishSpeaking()); }
+            });
+        }
         output.setText("Bereit. Was kann ich für dich tun?");
+    }
+
+    private void showHandsFreeConsent() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (getResources().getDisplayMetrics().density * 18);
+        panel.setPadding(pad, pad, pad, pad);
+        TextView explanation = new TextView(this);
+        explanation.setText("JARVIS hört nach Freigabe zu, solange diese App sichtbar geöffnet ist. "
+                + "Er reagiert auf „Jarvis, ...“, pausiert während seiner Antwort und hört danach wieder zu. "
+                + "Beim Verlassen der App stoppt das Mikrofon. "
+                + "Dafür wird die lokale Android-Spracherkennung benötigt; dauerhafte Erkennung "
+                + "kann je nach Gerät und Android-Sprachdienst unterbrochen werden.");
+        panel.addView(explanation);
+
+        CheckBox aiPermission = new CheckBox(this);
+        aiPermission.setText("Auch freie Sprachfragen nach „Jarvis“ automatisch an die OpenAI-API "
+                + "senden (zusätzliche Kosten möglich, maximal 12 Anfragen pro App-Sitzung).");
+        aiPermission.setEnabled(keyStore.isConfigured(this));
+        aiPermission.setChecked(false);
+        panel.addView(aiPermission);
+        if (!keyStore.isConfigured(this)) {
+            TextView info = new TextView(this);
+            info.setText("KI ist aus. Lokale Sprachbefehle funktionieren ohne API. "
+                    + "Für freie Fragen zuerst KI EINRICHTEN.");
+            panel.addView(info);
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Freisprechen aktivieren")
+                .setView(panel)
+                .setNegativeButton("Abbrechen", (dialog, which) -> { })
+                .setPositiveButton("FREISPRECHEN AKTIVIEREN", (dialog, which) -> {
+                    handsFreeEnabled = true;
+                    voiceAiConsent = aiPermission.isChecked() && keyStore.isConfigured(this);
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                            .putBoolean(HANDSFREE_PREF, true)
+                            .putBoolean(VOICE_AI_PREF, voiceAiConsent)
+                            .apply();
+                    voiceWaitingForReply = false;
+                    speechErrorStreak = 0;
+                    if (tts != null) tts.stop();
+                    speechInProgress = false;
+                    queueNextListen(300L);
+                    updateStatus();
+                }).show();
+    }
+
+    private void stopHandsFree() {
+        handsFreeEnabled = false;
+        voiceAiConsent = false;
+        voiceWaitingForReply = false;
+        voiceHandler.removeCallbacks(voiceRestart);
+        if (voiceInput != null) voiceInput.cancel();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean(HANDSFREE_PREF, false)
+                .putBoolean(VOICE_AI_PREF, false)
+                .apply();
+        updateStatus();
+    }
+
+    private void queueNextListen(long delayMs) {
+        voiceHandler.removeCallbacks(voiceRestart);
+        if (handsFreeEnabled && appVisible && !voiceWaitingForReply
+                && !speechInProgress && !aiBusy) {
+            voiceHandler.postDelayed(voiceRestart, Math.max(250L, delayMs));
+        }
+    }
+
+    private void finishSpeaking() {
+        speechInProgress = false;
+        voiceWaitingForReply = false;
+        queueNextListen(RESTART_DELAY_MS);
+        updateStatus();
+    }
+
+    private void handleHandsFreeUtterance(String recognized) {
+        String request = JarvisWakePhrase.extract(recognized);
+        if (request == null) {
+            // Ignore conversations not directed at JARVIS; no cloud cost.
+            queueNextListen(RESTART_DELAY_MS);
+            return;
+        }
+        voiceWaitingForReply = true;
+        if (request.isEmpty()) {
+            output.setText("Ja? Ich höre.");
+            speak("Ja? Ich höre.");
+            return;
+        }
+        JarvisCoreEngine.Result local = core.handle(request);
+        if (local.outcome != JarvisCoreEngine.Outcome.UNSUPPORTED) {
+            runCommand(request);
+            return;
+        }
+        if (!voiceAiConsent || !keyStore.isConfigured(this)) {
+            output.setText("Für freie Sprachfragen muss die KI eingerichtet "
+                    + "und beim Freisprechen ausdrücklich freigegeben sein.");
+            speak("Für freie Fragen aktiviere bitte die KI im Freisprechmodus.");
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (!JarvisWakePhrase.autoAiAllowed(voiceAiConsent, keyStore.isConfigured(this),
+                autoAiRequests, now, lastVoiceAiRequestMs)) {
+            output.setText(autoAiRequests >= 12
+                    ? "Sicherheitsgrenze: maximal 12 automatische KI-Fragen pro App-Sitzung erreicht."
+                    : "Bitte einen Moment bis zur nächsten KI-Frage warten.");
+            speak("Bitte einen Moment warten.");
+            return;
+        }
+        autoAiRequests++;
+        lastVoiceAiRequestMs = now;
+        askAi(request);
     }
 
     private void runCommand(String command) {
