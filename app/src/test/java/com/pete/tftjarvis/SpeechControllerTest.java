@@ -359,7 +359,7 @@ public class SpeechControllerTest {
 
         SpeechController.SpeechResult result = controller.speakTestAnnouncement(false);
         assertTrue(result.queued);
-        assertEquals("JARVIS bereit. Artefakt erkannt.", fakeEngine.lastSpokenText);
+        assertEquals("JARVIS bereit. Dies ist eine Testansage.", fakeEngine.lastSpokenText);
 
         // Test custom test phrase
         SpeechController.SpeechResult customResult = controller.speakTestPhrase("JARVIS Sprachausgabe aktiv. Test erfolgreich.", false);
@@ -451,5 +451,33 @@ public class SpeechControllerTest {
         assertEquals(beforeShutdown, callbacks[0]);
         assertEquals(SpeechController.EngineState.UNINITIALIZED, controller.getEngineState());
         assertFalse(controller.speakTestAnnouncement(false).queued);
+    }
+
+    @Test
+    public void explicitReplayReadsFilteredInfoWithoutAnotherAnalysis() {
+        SpeechController controller = new SpeechController(context, fakeEngine);
+        assertFalse(controller.speakCall("VOR_MATCH", "Lobby erkannt", "INFO", "HOCH", true, false).queued);
+        assertTrue(controller.speakLastAnalysis(false).queued);
+        assertEquals("Letzte Analyse, möglicherweise nicht mehr aktuell. Lobby erkannt", fakeEngine.lastSpokenText);
+    }
+
+    @Test
+    public void replayRespectsMuteAndResetAndDoesNotReplayTestPhrase() {
+        SpeechController controller = new SpeechController(context, fakeEngine);
+        controller.speakCall("VOR_MATCH", "Lobby erkannt", "INFO", "HOCH", true, false);
+        assertEquals(SpeechController.STATE_MUTED, controller.speakLastAnalysis(true).state);
+        controller.speakTestAnnouncement(false);
+        assertTrue(controller.speakLastAnalysis(false).queued);
+        assertTrue(fakeEngine.lastSpokenText.endsWith("Lobby erkannt"));
+        controller.resetMemory();
+        assertFalse(controller.speakLastAnalysis(false).queued);
+    }
+
+    @Test
+    public void emptyLatestAnalysisCannotReplayOlderAdvice() {
+        SpeechController controller = new SpeechController(context, fakeEngine);
+        controller.speakCall("PLANUNG", "Alter Hinweis", "WICHTIG", "HOCH", true, false);
+        controller.speakCall("UNKLAR", null, "INFO", "NIEDRIG", true, false);
+        assertFalse(controller.speakLastAnalysis(false).queued);
     }
 }
