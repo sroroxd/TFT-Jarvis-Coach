@@ -25,6 +25,12 @@ jobs:
         run: gradle --no-daemon lintDebug --stacktrace
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug --stacktrace
+      - name: Publish standalone preview APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-S24-standalone-preview-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
       - name: Audit the published 0.9.2 APK binary (not just source)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -107,7 +113,7 @@ jobs:
           test "$PKG" = "com.pete.tftjarvis"
           test "$APK_CODE" = "$SOURCE_CODE"
           test "$APK_NAME" = "$SOURCE_NAME"
-          grep -q "launchable-activity: name='com.pete.tftjarvis.MainActivity'" "$RUNNER_TEMP/jarvis-badging.txt"
+          grep -q "launchable-activity: name='com.pete.tftjarvis.JarvisActivity'" "$RUNNER_TEMP/jarvis-badging.txt"
           if grep -q '^application-debuggable' "$RUNNER_TEMP/jarvis-badging.txt"; then
             echo "::error::Production APK is debuggable."
             exit 1
@@ -119,8 +125,4 @@ jobs:
             echo "::error::Plaintext signing key tracked in Git!"
             exit 1
           fi
-      - uses: actions/upload-artifact@v4
-        with:
-          name: JARVIS-ci-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+

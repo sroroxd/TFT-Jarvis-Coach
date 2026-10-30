@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/jarvis_background"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="22dp"
+        android:paddingRight="22dp"
+        android:paddingTop="24dp"
+        android:paddingBottom="36dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="J A R V I S"
+                    android:textColor="#E5F9FF"
+                    android:fontFamily="sans-serif-light"
+                    android:textSize="29sp"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="PERSONAL INTELLIGENCE SYSTEM"
+                    android:textColor="#7392A3"
+                    android:textSize="10sp"
+                    android:letterSpacing="0.10"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="PREVIEW"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="#61DCE8"
+                android:textSize="10sp"
+                android:paddingLeft="10dp"
+                android:paddingRight="10dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:background="@drawable/jarvis_action_subtle"/>
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/jarvisCoreOrb"
+            android:layout_width="156dp"
+            android:layout_height="156dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="14dp"
+            android:src="@drawable/jarvis_orb"
+            android:contentDescription="JARVIS-Systemsymbol"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="SYSTEM ONLINE"
+            android:layout_marginTop="2dp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.20"
+            android:textColor="#E4F8FD"
+            android:textSize="12sp"
+            android:textAlignment="center"/>
+
+        <TextView
+            android:id="@+id/jarvisStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:layout_marginBottom="17dp"
+            android:text="LOKAL BEREIT · KI AUS"
+            android:textAlignment="center"
+            android:textColor="#83C6CA"
+            android:textSize="12sp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/jarvis_panel"
+            android:padding="17dp">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="JARVIS  /  ANTWORT"
+                android:letterSpacing="0.14"
+                android:textColor="#68C9D6"
+                android:fontFamily="sans-serif-medium"
+                android:textSize="10sp"/>
+            <TextView
+                android:id="@+id/jarvisOutput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:minHeight="66dp"
+                android:text="Bereit. Was kann ich für dich tun?"
+                android:fontFamily="sans-serif"
+                android:textColor="#E3EFF6"
+                android:textSize="17sp"
+                android:lineSpacingExtra="4dp"
+                android:textIsSelectable="true"/>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="21dp"
+            android:layout_marginBottom="9dp"
+            android:text="DEINE EINGABE"
+            android:letterSpacing="0.15"
+            android:textColor="#7899AA"
+            android:textSize="10sp"
+            android:fontFamily="sans-serif-medium"/>
+
+        <EditText
+            android:id="@+id/jarvisCommand"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/jarvis_input"
+            android:minHeight="58dp"
+            android:paddingLeft="17dp"
+            android:paddingRight="17dp"
+            android:hint="Frag mich etwas …"
+            android:inputType="textCapSentences"
+            android:imeOptions="actionDone"
+            android:singleLine="true"
+            android:textSize="16sp"
+            android:textColor="#F0F7FA"
+            android:textColorHint="#7895A7"
+            android:fontFamily="sans-serif"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="12dp">
+
+            <Button
+                android:id="@+id/jarvisVoiceButton"
+                android:layout_width="0dp"
+                android:layout_height="56dp"
+                android:layout_weight="1"
+                android:layout_marginRight="6dp"
+                android:background="@drawable/jarvis_action_primary"
+                android:backgroundTint="@null"
+                android:stateListAnimator="@null"
+                android:text="FREISPRECHEN AN"
+                android:textAllCaps="false"
+                android:textColor="#061923"
+                android:fontFamily="sans-serif-medium"
+                android:textSize="14sp"/>
+
+            <Button
+                android:id="@+id/jarvisAiSendButton"
+                android:layout_width="0dp"
+                android:layout_height="56dp"
+                android:layout_weight="1"
+                android:layout_marginLeft="6dp"
+                android:background="@drawable/jarvis_action_secondary"
+                android:backgroundTint="@null"
+                android:stateListAnimator="@null"
+                android:text="KI FRAGEN"
+                android:textAllCaps="false"
+                android:textColor="#D6F4FC"
+                android:fontFamily="sans-serif-medium"
+                android:textSize="14sp"/>
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/jarvisExecuteButton"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="9dp"
+            android:background="@drawable/jarvis_action_subtle"
+            android:backgroundTint="@null"
+            android:stateListAnimator="@null"
+            android:text="LOKALEN BEFEHL AUSFÜHREN"
+            android:textAllCaps="false"
+            android:textColor="#A8C6D5"
+            android:fontFamily="sans-serif-medium"
+            android:textSize="12sp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="13dp"
+            android:orientation="horizontal">
+            <Button
+                android:id="@+id/jarvisHelpButton"
+                android:layout_width="0dp"
+                android:layout_height="45dp"
+                android:layout_weight="1"
+                android:layout_marginRight="5dp"
+                android:background="@drawable/jarvis_action_subtle"
+                android:backgroundTint="@null"
+                android:stateListAnimator="@null"
+                android:text="Hilfe"
+                android:textAllCaps="false"
+                android:textColor="#B8CFD8"
+                android:textSize="12sp"/>
+            <Button
+                android:id="@+id/jarvisStatusButton"
+                android:layout_width="0dp"
+                android:layout_height="45dp"
+                android:layout_weight="1"
+                android:layout_marginLeft="5dp"
+                android:layout_marginRight="5dp"
+                android:background="@drawable/jarvis_action_subtle"
+                android:backgroundTint="@null"
+                android:stateListAnimator="@null"
+                android:text="Status"
+                android:textAllCaps="false"
+                android:textColor="#B8CFD8"
+                android:textSize="12sp"/>
+            <Button
+                android:id="@+id/jarvisMuteButton"
+                android:layout_width="0dp"
+                android:layout_height="45dp"
+                android:layout_weight="1"
+                android:layout_marginLeft="5dp"
+                android:background="@drawable/jarvis_action_subtle"
+                android:backgroundTint="@null"
+                android:stateListAnimator="@null"
+                android:text="Stumm"
+                android:textAllCaps="false"
+                android:textColor="#B8CFD8"
+                android:textSize="12sp"/>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:layout_marginBottom="9dp"
+            android:text="SYSTEM &amp; DATENSCHUTZ"
+            android:letterSpacing="0.15"
+            android:textColor="#7899AA"
+            android:textSize="10sp"
+            android:fontFamily="sans-serif-medium"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button
+                android:id="@+id/jarvisAiConfigButton"
+                android:layout_width="0dp"
+                android:layout_height="50dp"
+                android:layout_weight="1.05"
+                android:layout_marginRight="6dp"
+                android:background="@drawable/jarvis_action_secondary"
+                android:backgroundTint="@null"
+                android:stateListAnimator="@null"
+                android:text="KI EINRICHTEN"
+                android:textAllCaps="false"
+                android:textColor="#C7EEF4"
+                android:fontFamily="sans-serif-medium"
+                android:textSize="12sp"/>
+            <Button
+                android:id="@+id/jarvisClearSessionButton"
+                android:layout_width="0dp"
+                android:layout_height="50dp"
+                android:layout_weight="0.95"
+                android:layout_marginLeft="6dp"
+                android:background="@drawable/jarvis_action_subtle"
+                android:backgroundTint="@null"
+                android:stateListAnimator="@null"
+                android:text="KONTEXT LÖSCHEN"
+                android:textAllCaps="false"
+                android:textColor="#A9BECE"
+                android:fontFamily="sans-serif-medium"
+                android:textSize="12sp"/>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="Freisprechen: Nach Freigabe kannst du bei geöffneter App ohne Aktivierungswort sprechen. Freie KI-Antworten benötigen einen eingerichteten Anbieter und separate Zustimmung zur Datenübertragung; Kosten sind möglich. Während JARVIS spricht, ist das Mikrofon derzeit pausiert."
+            android:lineSpacingExtra="2dp"
+            android:textSize="11sp"
+            android:textColor="#7690A0"/>
+    </LinearLayout>
+</ScrollView>
