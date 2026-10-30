@@ -121,8 +121,9 @@ final class JarvisSpeechInput {
         }
     }
 
-    void onPermissionResult(int requestCode, int[] grantResults) {
+    void onPermissionResult(int requestCode, int[] grantResults, boolean appVisible) {
         if (requestCode != MICROPHONE_REQUEST) return;
+        if (!appVisible) return; // User moved app to background while permission UI was open.
         if (grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             startOrCancel();
