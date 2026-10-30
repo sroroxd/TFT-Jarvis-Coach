@@ -25,6 +25,7 @@ final class JarvisSpeechInput {
     interface Callbacks {
         void onSpeechState(String state);
         void onRecognizedText(String text);
+        void onPartialText(String text);
         void onSpeechError(String description);
     }
 
@@ -103,7 +104,15 @@ final class JarvisSpeechInput {
                     }
                 }
 
-                @Override public void onPartialResults(Bundle partialResults) { }
+                @Override public void onPartialResults(Bundle partialResults) {
+                    if (!isCurrent() || partialResults == null) return;
+                    ArrayList<String> partialMatches =
+                            partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                    if (partialMatches != null && !partialMatches.isEmpty()) {
+                        String text = partialMatches.get(0).trim();
+                        if (!text.isEmpty()) callbacks.onPartialText(text);
+                    }
+                }
                 @Override public void onEvent(int eventType, Bundle params) { }
             });
             Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
@@ -111,7 +120,7 @@ final class JarvisSpeechInput {
                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
             intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.GERMAN.toLanguageTag());
             intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
-            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
+            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
             next.startListening(intent);
             callbacks.onSpeechState("MIKROFON AKTIV");
