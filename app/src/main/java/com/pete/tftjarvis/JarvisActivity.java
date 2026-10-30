@@ -132,7 +132,10 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                         && JarvisBargeInGate.isStrongFinalInterruption(text, activeSpeechText);
                 if (capturedDuringTts
                         && (echo || (!interruptedFromPartial && !clearFinalInterruption))) {
-                    queueNextListen(450L);
+                    // The speech service returned a transcript, so do not retain
+                    // stale failure counts merely because this was TTS echo.
+                    speechErrorStreak = 0;
+                    queueNextListen(1200L);
                     return;
                 }
                 // A final-only interruption must stop the old answer before
@@ -156,29 +159,31 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                 }
             }
 
-            @Override public void onSpeechError(String description) {
+            @Override public void onSpeechError(int errorCode, String description) {
                 bargeInCapture = false;
                 bargeInDetected = false;
+                final String diagnostic = JarvisSpeechRecovery.diagnose(errorCode)
+                        + " (Android-Code " + errorCode + ").";
                 if (handsFreeEnabled) {
-                    // Android may end a silence-only session without a transcript.
-                    // Recover with a delay. Never spin on a missing microphone/engine.
-                    if (description.contains("nicht verfügbar")
-                            || description.contains("Berechtigung")
-                            || description.contains("nicht erlaubt")) {
+                    if (JarvisSpeechRecovery.mustStop(errorCode)) {
                         stopHandsFree();
-                        output.setText(description);
-                    } else if (description.startsWith("Keine Sprache erkannt")) {
-                        // Silence is normal, not a fault; keep the foreground loop alive.
+                        output.setText("Freisprechen gestoppt: " + diagnostic + " "
+                                + JarvisSpeechRecovery.actionableHint(errorCode));
+                    } else if (JarvisSpeechRecovery.isSilence(errorCode)) {
+                        // A normal pause is not a failure or a reason to disable listening.
                         speechErrorStreak = 0;
-                        queueNextListen(850L);
-                    } else if (++speechErrorStreak > 5) {
+                        queueNextListen(JarvisSpeechRecovery.delayMs(errorCode, 0));
+                    } else if (++speechErrorStreak >= 4) {
                         stopHandsFree();
-                        output.setText("Spracherkennung mehrfach unterbrochen. Freisprechen erneut aktivieren.");
+                        output.setText("Freisprechen nach mehreren Fehlern pausiert: "
+                                + diagnostic + " " + JarvisSpeechRecovery.actionableHint(errorCode));
                     } else {
-                        queueNextListen(1200L + 650L * speechErrorStreak);
+                        output.setText("Spracherkennung wird erneut versucht: " + diagnostic);
+                        queueNextListen(JarvisSpeechRecovery.delayMs(
+                                errorCode, speechErrorStreak));
                     }
                 } else {
-                    output.setText(description);
+                    output.setText(description + " (Android-Code " + errorCode + ").");
                 }
                 updateStatus();
             }
