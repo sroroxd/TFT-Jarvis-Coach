@@ -66,3 +66,13 @@ Wir entwickeln **eine einzige Android-Anwendung namens JARVIS**, orientiert am F
 
 ## Unmittelbarer nächster Implementierungsschritt
 `JarvisCapability` + `JarvisRouter` + lokale Basisbefehle als Android-unabhängige Java-Komponenten implementieren und testen. Danach Android-Startseite auf JARVIS statt TFT konfigurieren, TFT-Grenze als optionalen Adapter vorbereiten; erst anschließend Spracherkennung hinzufügen.
+
+
+## P2-Vorschau 0.9.8 – eigenständige KI direkt in JARVIS (noch nicht auf S24 abgenommen)
+- Lokale Befehle gehen zuerst an den Offline-Capability-Router. Ein freier Text wird weder bei AUSFÜHREN noch nach Sprachtranskription stillschweigend in die Cloud geleitet. Nur die separate Schaltfläche KI FRAGEN kann eine externe Anfrage starten.
+- Die JARVIS-App hat eine getrennte OpenAI-Responses-API-Verbindung (Modell für Vorschau: gpt-4.1-mini). Dieses Modell ist nicht als aktuelles oder auf dem S24 bestätigtes Modell zu bezeichnen. Keine automatische Übernahme des ChatGPT-Accounts, der Gesprächshistorie, Memory oder Plugins.
+- Persönlicher API-Schlüssel wird durch Android Keystore AES-GCM verschlüsselt gespeichert, nie im Quellcode/Log und jederzeit löschbar. Für produktive Bereitstellung an mehrere Nutzer ist ein eigener Backend-/Auth-Ansatz erforderlich.
+- Vor Aktivierung: ausdrückliche Zustimmung im Dialog für mögliche zusätzliche API-Kosten und Übertragung von Frage und maximal vier vorherigen Gesprächsrunden. ChatGPT Plus finanziert die API nicht automatisch. Der Prototyp hat derzeit KEIN hartes Kostenlimit; Nutzer muss Platform-Budget-/Nutzungskontrollen konfigurieren.
+- Antworten via Text und vorhandener TTS, Anfragen bei Abbruch und App-Verlassen zu stoppen. Session-Kontext liegt nur im RAM, Nutzer kann ihn löschen. Kein automatisches Hintergrund-Senden und keine Tool-Aktionen vorgetäuscht.
+- Sicherheitsregeln: feste HTTPS-Adresse, Größen- und Zeitlimits, klar benannte Fehler, keine automatischen wiederholten Anfragen. Noch keine echten Geräte-Tools in der KI-Implementierung.
+- Nicht als fertig markieren, bevor CI/CodeQL, echte S24-Prüfung, autorisierter End-to-End-API-Aufruf, Kostenkontrolle, konfigurierbare Erinnerung und mindestens zwei wirksame gesicherte Gerätetools belegt sind.
