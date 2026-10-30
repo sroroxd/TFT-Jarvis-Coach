@@ -16,6 +16,15 @@ final class JarvisWakePhrase {
         return s.replaceFirst("(?i)^jarvis[\\s,:!?-]*", "").trim();
     }
 
+    /** In an opted-in live session a wake word is optional, never required. */
+    static String freeSpeech(String phrase) {
+        if (phrase == null) return "";
+        String text = phrase.trim();
+        if (text.isEmpty()) return "";
+        String stripped = extract(text);
+        return stripped != null ? stripped : text;
+    }
+
     static boolean autoAiAllowed(boolean consent, boolean configured,
                                  int requests, long now, long lastRequest) {
         return consent && configured && requests < 12
