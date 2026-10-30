@@ -421,7 +421,9 @@ public class ScreenCaptureService extends Service {
                 smartFrameDetector.discardPendingAnalysis();
                 String msg = e.getMessage() == null ? "Analysefehler" : e.getMessage();
                 String lower = msg.toLowerCase(Locale.ROOT);
-                boolean transientCloud = lower.contains("503")
+                boolean transientCloud = e instanceof java.net.SocketTimeoutException
+                        || lower.contains("timed out") || lower.contains("timeout")
+                        || lower.contains("503")
                         || lower.contains("high demand")
                         || lower.contains("zu langsam")
                         || lower.contains("temporarily")
@@ -447,7 +449,7 @@ public class ScreenCaptureService extends Service {
                             System.currentTimeMillis() + 20_000L
                     );
                     smartFrameDetector.deferRetryUntil(rateLimitedUntil);
-                    setCoachText("KI ausgelastet – letzter Plan nicht aktuell bestätigt");
+                    setCoachText(OverlayMessageFormatter.transientFailureMessage(e));
                 } else {
                     // Never display arbitrary HTTP/model error bodies or prompt fragments.
                     android.util.Log.w("TFTJarvis", "Analyse fehlgeschlagen: "
@@ -486,7 +488,9 @@ public class ScreenCaptureService extends Service {
 
     private void publishCall(String phase, String call, String plan, String priority,
                              String confidence, String resetNotice, boolean manualRequest) {
+        final long publishedGeneration = stateGeneration.get();
         mainHandler.post(() -> {
+            if (instance != this || publishedGeneration != stateGeneration.get()) return;
             String badge = "KRITISCH".equals(priority) ? "!" : ("WICHTIG".equals(priority) ? "*" : "i");
             String shortCall = OverlayMessageFormatter.message(phase, call);
             StringBuilder diagnostic = new StringBuilder("[" + badge + "][" + phase + "] " + call);
@@ -520,6 +524,13 @@ public class ScreenCaptureService extends Service {
                 diagnostic.append("\nSPRACHE: ").append(result.state)
                         .append(" (").append(result.reason).append(")");
                 lastDiagnosticText = diagnostic.toString();
+                if (manualRequest && !result.queued) {
+                    String speechNotice = SpeechController.STATE_POLICY_FILTERED.equals(result.state)
+                            ? "Nur Text – Vorlesen über ⋮"
+                            : "Sprache: " + result.reason;
+                    lastDetailText += "\n" + speechNotice;
+                    showTransientCall(shortCall + "\n" + speechNotice);
+                }
             }
             if (detailText != null && overlayExpanded) {
                 detailText.setText(diagnosticsVisible ? lastDiagnosticText : lastDetailText);
@@ -927,6 +938,7 @@ public class ScreenCaptureService extends Service {
                 ? "Intelligente Automatik ausschalten"
                 : "Intelligente Automatik einschalten");
         menu.getMenu().add(speechMuted ? "Sprache einschalten" : "Stumm schalten");
+        menu.getMenu().add("Letzte Analyse vorlesen");
         menu.getMenu().add("Testansage abspielen");
         menu.getMenu().add("Diagnose anzeigen");
         menu.getMenu().add("Neue Partie / Gedächtnis zurücksetzen");
@@ -946,6 +958,13 @@ public class ScreenCaptureService extends Service {
                 if (speechMuted && speechController != null) speechController.stop();
                 setCoachText(speechMuted ? "Sprachausgabe stumm" : "Sprachausgabe aktiv");
                 updateHeaderStatus();
+                return true;
+            }
+            if ("Letzte Analyse vorlesen".equals(title)) {
+                if (speechController != null) {
+                    SpeechController.SpeechResult res = speechController.speakLastAnalysis(speechMuted);
+                    setCoachText("Vorlesen: " + res.reason);
+                }
                 return true;
             }
             if ("Testansage abspielen".equals(title)) {
@@ -985,9 +1004,6 @@ public class ScreenCaptureService extends Service {
         String ttsSummary = speechController != null
                 ? speechController.getStatusSummary(speechMuted) : "TTS: nicht initialisiert";
         StringBuilder report = new StringBuilder();
-        if (!lastDiagnosticText.trim().isEmpty()) {
-            report.append(lastDiagnosticText).append("\n");
-        }
         report.append("STATUS: ").append(source)
                 .append(" | Auto: ").append(smartAutoEnabled ? "AN" : "AUS")
                 .append(" | ").append(ttsSummary)
@@ -999,6 +1015,9 @@ public class ScreenCaptureService extends Service {
                 .append(" (").append(lastErrorType).append(")")
                 .append(" | OCR: ").append(lastOcrMs).append("ms")
                 .append(" | KI: ").append(lastCloudMs).append("ms");
+        if (!lastDiagnosticText.trim().isEmpty()) {
+            report.append("\nLETZTES ANALYSEERGEBNIS:\n").append(lastDiagnosticText);
+        }
 
         diagnosticsVisible = true;
         overlayExpanded = true;
