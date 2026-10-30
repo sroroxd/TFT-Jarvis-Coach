@@ -94,11 +94,32 @@
                 android:layout_weight="1"
                 android:text="STUMM" />
         </LinearLayout>
+        <Button
+            android:id="@+id/jarvisAiConfigButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:minHeight="48dp"
+            android:text="KI EINRICHTEN" />
+        <Button
+            android:id="@+id/jarvisAiSendButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="52dp"
+            android:text="KI FRAGEN (EXTERNE API)" />
+        <Button
+            android:id="@+id/jarvisClearSessionButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="48dp"
+            android:text="GESPRÄCHSKONTEXT LÖSCHEN" />
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="30dp"
-            android:text="Kern-Vorschau · Texteingabe offline. Mikrofon nur nach Tippen auf SPRECHEN und expliziter Android-Freigabe; ausschließlich lokale Spracherkennung, falls das Gerät sie anbietet. Keine KI-Anbindung und keine Bildschirmfreigabe."
+            android:text="Vorschau: Lokale Befehle funktionieren ohne Internet. Mikrofon nur nach Freigabe. KI ist standardmäßig AUS. Für KI wird ein separater, möglicherweise kostenpflichtiger OpenAI-API-Zugang mit ausdrücklicher Aktivierung benötigt. Keine automatische ChatGPT-Synchronisierung; kein verifiziertes Kostenlimit in der App. Die KI-Verbindung ist noch nicht auf dem S24 abgenommen."
             android:textSize="13sp"
             android:textColor="#8FA1B5" />
     </LinearLayout>
