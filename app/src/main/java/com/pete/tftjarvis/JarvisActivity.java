@@ -161,6 +161,13 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     }
 
     @Override
+    protected void onStop() {
+        // Microphone must not remain active when JARVIS is no longer visible.
+        if (voiceInput != null && voiceInput.isListening()) voiceInput.cancel();
+        super.onStop();
+    }
+
+    @Override
     protected void onDestroy() {
         if (voiceInput != null) voiceInput.cancel();
         if (tts != null) {
