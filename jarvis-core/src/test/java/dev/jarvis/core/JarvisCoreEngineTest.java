@@ -1,4 +1,4 @@
-package com.pete.tftjarvis.core;
+package dev.jarvis.core;
 
 import org.junit.Test;
 import static org.junit.Assert.*;

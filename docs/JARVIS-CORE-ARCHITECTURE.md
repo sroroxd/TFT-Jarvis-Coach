@@ -76,3 +76,11 @@ Wir entwickeln **eine einzige Android-Anwendung namens JARVIS**, orientiert am F
 - Antworten via Text und vorhandener TTS, Anfragen bei Abbruch und App-Verlassen zu stoppen. Session-Kontext liegt nur im RAM, Nutzer kann ihn löschen. Kein automatisches Hintergrund-Senden und keine Tool-Aktionen vorgetäuscht.
 - Sicherheitsregeln: feste HTTPS-Adresse, Größen- und Zeitlimits, klar benannte Fehler, keine automatischen wiederholten Anfragen. Noch keine echten Geräte-Tools in der KI-Implementierung.
 - Nicht als fertig markieren, bevor CI/CodeQL, echte S24-Prüfung, autorisierter End-to-End-API-Aufruf, Kostenkontrolle, konfigurierbare Erinnerung und mindestens zwei wirksame gesicherte Gerätetools belegt sind.
+
+## Technische Auslagerung — eigenständiger JARVIS-Kern (30.10.2026)
+
+- Der allgemeine JARVIS-Befehlsrouter und die lokalen Basisaktionen liegen nun im eigenen reinen Java-Gradle-Modul `jarvis-core` mit Paket `dev.jarvis.core`. Es hat **keine Android-, TFT-, Netz- oder Gemini-Abhängigkeiten**.
+- Die Android-App konsumiert diesen Kern über `implementation project(':jarvis-core')`; Sprach- und KI-Adapter bleiben auf Android-Seite und benötigen weiterhin unabhängige Tests.
+- Die zugehörigen JUnit-Tests werden im Kernmodul ausgeführt und sind in der GitHub-CI zusätzlich als separater Schritt vorgesehen.
+- Das ist **Architektur-Isolation, keine Freigabe der Sprachfunktion**. Die Freigabesperre aus PR #44 bleibt unverändert: experimentelles Barge-in, S24-Ultra-Praxistest und akustischer Echo-Schutz ausstehend.
+- Nächste Trennstufe: eigener stabiler Paketname für die allgemeine JARVIS-App, danach TFT ausschließlich als optionaler Skill. Erst nach Paket-/Signatur-/Migrationsprüfung ändern, damit bestehende Installationen und Updates nicht unbemerkt beschädigt werden.

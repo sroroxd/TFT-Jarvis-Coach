@@ -48,6 +48,7 @@ android {
 
 
 dependencies {
+    implementation project(':jarvis-core')
     // Bundled on-device OCR: no network/model download required at runtime.
     implementation 'com.google.mlkit:text-recognition:16.0.1'
     testImplementation 'junit:junit:4.13.2'

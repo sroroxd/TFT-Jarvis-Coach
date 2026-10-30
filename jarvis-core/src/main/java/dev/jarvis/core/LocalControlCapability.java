@@ -1,4 +1,4 @@
-package com.pete.tftjarvis.core;
+package dev.jarvis.core;
 
 /** Local core commands; the host application supplies the actual device actions. */
 public final class LocalControlCapability implements JarvisCoreEngine.Capability {

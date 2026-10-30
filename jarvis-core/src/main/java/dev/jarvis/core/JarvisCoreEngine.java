@@ -1,4 +1,4 @@
-package com.pete.tftjarvis.core;
+package dev.jarvis.core;
 
 import java.util.List;
 import java.util.Locale;
