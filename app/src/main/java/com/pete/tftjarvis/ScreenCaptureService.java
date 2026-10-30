@@ -1,6 +1,7 @@
 package com.pete.tftjarvis;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -512,15 +513,24 @@ public class ScreenCaptureService extends Service {
             if (tts != null && shouldSpeak(phase, call, priority, confidence, manualRequest)) {
                 tts.speak(call, TextToSpeech.QUEUE_FLUSH, null, "tft-call");
             }
-            // Android 13+ permits updating a regular notification only with consent.
-            // A denied permission must not interrupt the optional TFT coaching call.
-            if (Build.VERSION.SDK_INT < 33
-                    || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-                    == PackageManager.PERMISSION_GRANTED) {
-                NotificationManager nm = getSystemService(NotificationManager.class);
-                if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification(call));
-            }
+            updateLegacyNotificationIfPermitted(call);
         });
+    }
+
+    /**
+     * Legacy TFT notification: unreachable from the minimal-permission JARVIS
+     * preview manifest. Runtime permission checks are still required if the
+     * optional capture service is later included in a permissioned variant.
+     */
+    @SuppressLint("NotificationPermission")
+    private void updateLegacyNotificationIfPermitted(String call) {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) manager.notify(NOTIFICATION_ID, buildNotification(call));
     }
 
     private static boolean isEarlyMatchStage(String stage) {
