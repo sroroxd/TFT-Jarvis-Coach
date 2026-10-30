@@ -19,7 +19,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Unit tests
+      - name: Independent JARVIS core unit tests
+        run: gradle --no-daemon :jarvis-core:test --stacktrace
+      - name: Android unit tests
         run: gradle --no-daemon testDebugUnitTest --stacktrace
       - name: Static Android lint
         run: gradle --no-daemon lintDebug --stacktrace
