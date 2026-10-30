@@ -11,6 +11,8 @@ import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.text.InputType;
 import android.view.inputmethod.EditorInfo;
+import android.widget.ArrayAdapter;
+import android.widget.Spinner;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -39,7 +41,8 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     private static final String MUTED = "speech_muted";
     private static final int MAX_CONTEXT_TURNS = 4;
     private static final String HANDSFREE_PREF = "foreground_handsfree_enabled";
-    private static final String VOICE_AI_PREF = "voice_ai_explicit_consent";
+    // New opt-in key: old wakeword-gated authorization MUST NOT carry over to wakewordless mode.
+    private static final String VOICE_AI_PREF = "voice_ai_explicit_consent_no_wake_v2";
     private static final long RESTART_DELAY_MS = 850L;
 
     private final Handler voiceHandler = new Handler(Looper.getMainLooper());
@@ -67,6 +70,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
 
     private final JarvisSecretStore keyStore = new JarvisSecretStore();
     private final JarvisAiClient aiClient = new JarvisAiClient();
+    private final JarvisGeminiClient geminiClient = new JarvisGeminiClient();
     private final ExecutorService aiExecutor = Executors.newSingleThreadExecutor();
     private final List<String[]> sessionTurns = new ArrayList<>();
     private JarvisAiClient.CancelToken currentAiToken;
@@ -202,15 +206,17 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         panel.setPadding(pad, pad, pad, pad);
         TextView explanation = new TextView(this);
         explanation.setText("JARVIS hört nach Freigabe zu, solange diese App sichtbar geöffnet ist. "
-                + "Er reagiert auf „Jarvis, ...“, pausiert während seiner Antwort und hört danach wieder zu. "
+                + "Du sprichst frei und ohne Ansprechwort; JARVIS antwortet und hört danach erneut zu. "
                 + "Beim Verlassen der App stoppt das Mikrofon. "
                 + "Dafür wird die lokale Android-Spracherkennung benötigt; dauerhafte Erkennung "
                 + "kann je nach Gerät und Android-Sprachdienst unterbrochen werden.");
         panel.addView(explanation);
 
         CheckBox aiPermission = new CheckBox(this);
-        aiPermission.setText("Auch freie Sprachfragen nach „Jarvis“ automatisch an die OpenAI-API "
-                + "senden (zusätzliche Kosten möglich, maximal 12 Anfragen pro App-Sitzung).");
+        aiPermission.setText("Gesprochene Fragen und Gesprächskontext ohne Aktivierungswort an "
+                + (JarvisSecretStore.GEMINI.equals(keyStore.provider(this)) ? "Google Gemini" : "OpenAI")
+                + " senden (Kontingent kann kostenlos sein, Kosten sind nicht ausgeschlossen; "
+                + "maximal 12 automatische Anfragen pro App-Sitzung).");
         aiPermission.setEnabled(keyStore.isConfigured(this));
         aiPermission.setChecked(false);
         panel.addView(aiPermission);
@@ -270,16 +276,11 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     }
 
     private void handleHandsFreeUtterance(String recognized) {
-        String request = JarvisWakePhrase.extract(recognized);
-        if (request == null) {
-            // Ignore conversations not directed at JARVIS; no cloud cost.
-            queueNextListen(RESTART_DELAY_MS);
-            return;
-        }
+        String request = JarvisWakePhrase.freeSpeech(recognized);
         voiceWaitingForReply = true;
         if (request.isEmpty()) {
-            output.setText("Ja? Ich höre.");
-            speak("Ja? Ich höre.");
+            voiceWaitingForReply = false;
+            queueNextListen(RESTART_DELAY_MS);
             return;
         }
         JarvisCoreEngine.Result local = core.handle(request);
@@ -322,7 +323,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         }
     }
 
-    /** Manual KI FRAGEN, or explicitly opt-in foreground hands-free + wake phrase. */
+    /** Manual KI FRAGEN, or explicitly opt-in foreground conversational speech. */
     private void askAi() {
         askAi(commandInput.getText().toString().trim());
     }
@@ -346,6 +347,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
             output.setText("KI ist ausgeschaltet. Erst KI EINRICHTEN und Kostenfreigabe bestätigen.");
             return;
         }
+        final String provider = keyStore.provider(this);
         final String apiKey;
         try {
             apiKey = keyStore.load(this);
@@ -362,13 +364,16 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         final List<String[]> context = new ArrayList<>(sessionTurns);
         currentAiToken = token;
         aiBusy = true;
-        output.setText("Eigene KI-Anfrage wird gesendet. Text und kurzer Gesprächskontext gehen an OpenAI.");
+        output.setText("KI-Anfrage läuft. Frage und kurzer Gesprächskontext gehen an "
+                + (JarvisSecretStore.GEMINI.equals(provider) ? "Google Gemini." : "OpenAI."));
         updateStatus();
         currentAiTask = aiExecutor.submit(() -> {
             String answer = null;
             String error = null;
             try {
-                answer = aiClient.answer(apiKey, question, context, token);
+                answer = JarvisSecretStore.GEMINI.equals(provider)
+                        ? geminiClient.answer(apiKey, question, context, token)
+                        : aiClient.answer(apiKey, question, context, token);
             } catch (IOException e) {
                 error = e.getMessage();
             } catch (RuntimeException e) {
@@ -403,15 +408,25 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         layout.setPadding(margin, margin / 2, margin, margin / 2);
 
         TextView explanation = new TextView(this);
-        explanation.setText("Optionaler persönlicher OpenAI-API-Zugang. "
-                + "API-Nutzung kann unabhängig von ChatGPT Plus Geld kosten. "
-                + "JARVIS setzt derzeit KEIN hartes Kostenlimit: Limits im OpenAI-Platform-Konto festlegen. "
-                + "KI FRAGEN sendet deine Eingabe. Freisprechen kann erst nach SEPARATER "
-                + "Zustimmung und nur nach dem Ansprechnamen „Jarvis“ Fragen übertragen; "
-                + "dabei entstehen möglicherweise weitere Kosten. "
-                + "Keine automatische Verbindung zu diesem Chat oder dessen Erinnerung. "
-                + "Ein lokaler Geräteschlüssel ist kein Ersatz für serverseitige Schlüsselverwaltung.");
+        explanation.setText("Wähle Gemini oder OpenAI und verwende deinen eigenen API-Schlüssel. "
+                + "Für Gemini kann ein begrenztes kostenloses Kontingent verfügbar sein. "
+                + "Das garantiert NICHT, dass deinem Google-Konto keine Kosten entstehen: "
+                + "prüfe Abrechnung und Kontingente selbst. Es gibt keine automatische Umschaltung "
+                + "auf einen kostenpflichtigen Anbieter. "
+                + "JARVIS besitzt kein hartes Euro-Kostenlimit. "
+                + "KI FRAGEN sendet die Eingabe; freie Sprache wird erst nach weiterer "
+                + "Einwilligung gesendet. Keine Verbindung zu deinem ChatGPT-Konto.");
         layout.addView(explanation);
+
+        Spinner providerPicker = new Spinner(this);
+        ArrayAdapter<String> providerOptions = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, new String[] {
+                "Google Gemini (Gratis-Kontingent möglich)", "OpenAI (mögliche API-Kosten)"});
+        providerOptions.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        providerPicker.setAdapter(providerOptions);
+        providerPicker.setSelection(keyStore.isConfigured(this)
+                && JarvisSecretStore.OPENAI.equals(keyStore.provider(this)) ? 1 : 0);
+        layout.addView(providerPicker);
 
         EditText field = new EditText(this);
         field.setSingleLine(true);
@@ -421,7 +436,8 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         layout.addView(field);
 
         CheckBox agree = new CheckBox(this);
-        agree.setText("Ich aktiviere API-Nutzung mit möglichen zusätzlichen Kosten und Datenübertragung.");
+        agree.setText("Ich erlaube Datenübertragung an den gewählten Anbieter und weiß, "
+                + "dass ohne geprüftes kostenloses Kontingent Kosten möglich sind.");
         agree.setChecked(false);
         layout.addView(agree);
 
@@ -429,7 +445,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                 .setTitle(keyStore.isConfigured(this) ? "JARVIS KI neu einrichten" : "JARVIS KI einrichten")
                 .setView(layout)
                 .setNegativeButton("Abbrechen", (dialog, which) -> { })
-                .setPositiveButton("KOSTENPFLICHTIGE KI AKTIVIEREN", null);
+                .setPositiveButton("KI-ZUGANG SPEICHERN", null);
         if (keyStore.isConfigured(this)) {
             builder.setNeutralButton("KI DEAKTIVIEREN UND SCHLÜSSEL LÖSCHEN",
                     (dialog, which) -> {
@@ -451,7 +467,9 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                         return;
                     }
                     try {
-                        keyStore.saveAndEnable(this, field.getText().toString());
+                        String selectedProvider = providerPicker.getSelectedItemPosition() == 0
+                                ? JarvisSecretStore.GEMINI : JarvisSecretStore.OPENAI;
+                        keyStore.saveAndEnable(this, field.getText().toString(), selectedProvider);
                         voiceAiConsent = false;
                         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                                 .putBoolean(VOICE_AI_PREF, false).apply();
@@ -495,7 +513,10 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     private void updateStatus() {
         if (systemStatus == null || muteButton == null) return;
         String aiMode = aiBusy ? "KI ANFRAGE LÄUFT"
-                : (keyStore.isConfigured(this) ? "KI OPT-IN" : "KI AUS");
+                : (keyStore.isConfigured(this)
+                        ? (JarvisSecretStore.GEMINI.equals(keyStore.provider(this))
+                            ? "GEMINI EINGERICHTET" : "OPENAI EINGERICHTET")
+                        : "KI AUS");
         String voiceMode = handsFreeEnabled
                 ? (voiceInput != null && voiceInput.isListening() ? "MIKROFON AN"
                     : (speechInProgress ? "JARVIS SPRICHT" : "FREISPRECHEN BEREIT"))
@@ -536,7 +557,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                 + "Sprachausgabe "
                 + (speechMuted ? "stumm. " : (ttsReady ? "aktiv. " : "nicht verfügbar. "))
                 + (keyStore.isConfigured(this)
-                    ? "Eigene kostenpflichtige KI-Verbindung aktiviert. "
+                    ? "KI-Dienst eingerichtet; mögliche Kosten hängen vom gewählten Anbieter ab. "
                     : "KI nicht eingerichtet. ")
                 + "Kein laufendes ChatGPT oder TFT erforderlich.";
     }
@@ -563,6 +584,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         if (tts != null) tts.stop();
         speechInProgress = false;
         cancelAiRequest(); // No microphone or cloud jobs while backgrounded.
+        voiceWaitingForReply = false;
         super.onStop();
     }
 
