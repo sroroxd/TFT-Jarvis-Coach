@@ -54,6 +54,30 @@ final class JarvisBargeInGate {
         return heardWords.length >= 3 && overlapping * 4 >= heardWords.length * 3;
     }
 
+    /**
+     * A fallback for Android recognizers that do not send onPartialResults.
+     * A final result alone is accepted only if clearly unlike JARVIS's TTS.
+     * This is a conservative text heuristic, NOT acoustic echo cancellation.
+     */
+    static boolean isStrongFinalInterruption(String heard, String spoken) {
+        if (isLikelyEcho(heard, spoken)) return false;
+        if (isStopCommand(heard)) return true;
+
+        String candidate = words(heard);
+        String response = words(spoken);
+        if (candidate.length() < 20 || response.isEmpty()) return false;
+        String[] candidateWords = candidate.split(" ");
+        if (candidateWords.length < 4) return false;
+
+        Set<String> ttsVocabulary = new HashSet<>();
+        for (String word : response.split(" ")) ttsVocabulary.add(word);
+        int novel = 0;
+        for (String word : candidateWords) {
+            if (!ttsVocabulary.contains(word)) novel++;
+        }
+        return novel >= 3 && novel * 4 >= candidateWords.length * 3;
+    }
+
     static boolean mightBeInterruption(String heard, String spoken) {
         if (isLikelyEcho(heard, spoken)) return false;
         if (isStopCommand(heard)) return true;

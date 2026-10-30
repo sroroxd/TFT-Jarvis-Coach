@@ -124,13 +124,21 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                 boolean interruptedFromPartial = bargeInDetected;
                 bargeInCapture = false;
                 bargeInDetected = false;
-                // Never dispatch a transcript captured from our own voice unless
-                // a distinct partial hypothesis already stopped the TTS stream.
-                if (capturedDuringTts && (!interruptedFromPartial
-                        || JarvisBargeInGate.isLikelyEcho(text, activeSpeechText))) {
+                // Some Android recognizers provide no partial results at all.
+                // Accept a final-only interruption only when markedly different
+                // from TTS. Never forward a plausible TTS echo to the cloud.
+                boolean echo = JarvisBargeInGate.isLikelyEcho(text, activeSpeechText);
+                boolean clearFinalInterruption = capturedDuringTts && !interruptedFromPartial
+                        && JarvisBargeInGate.isStrongFinalInterruption(text, activeSpeechText);
+                if (capturedDuringTts
+                        && (echo || (!interruptedFromPartial && !clearFinalInterruption))) {
                     queueNextListen(450L);
                     return;
                 }
+                // A final-only interruption must stop the old answer before
+                // the next turn is handled. Partial-based interruption has
+                // already stopped it in onPartialText.
+                if (clearFinalInterruption && speechInProgress) stopSpeechForBargeIn();
                 speechErrorStreak = 0;
                 commandInput.setText(text);
                 if (handsFreeEnabled) {
@@ -589,8 +597,11 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                             ? "GEMINI EINGERICHTET" : "OPENAI EINGERICHTET")
                         : "KI AUS");
         String voiceMode = handsFreeEnabled
-                ? (voiceInput != null && voiceInput.isListening() ? "MIKROFON AN"
-                    : (speechInProgress ? "JARVIS SPRICHT" : "FREISPRECHEN BEREIT"))
+                ? (speechInProgress
+                    ? (voiceInput != null && voiceInput.isListening()
+                        ? "JARVIS SPRICHT + MIKROFON (TEST)" : "JARVIS SPRICHT")
+                    : (voiceInput != null && voiceInput.isListening()
+                        ? "MIKROFON AN" : "FREISPRECHEN BEREIT"))
                 : (speechMuted ? "STUMM" : (ttsReady ? "SPRACHE AKTIV" : "SPRACHE WIRD GELADEN"));
         systemStatus.setText("LOKAL BEREIT · " + aiMode + " · " + voiceMode);
         muteButton.setText(speechMuted ? "LAUT" : "STUMM");
