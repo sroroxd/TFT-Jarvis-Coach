@@ -293,7 +293,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="KI standardmäßig aus. Eine separate API kann zusätzliche Kosten verursachen. Einstellungen und Einwilligung unter „KI einrichten“."
+            android:text="Freisprechen: Nach Freigabe hört JARVIS nur bei geöffneter App auf „Jarvis, ...“. Automatische KI-Sprachfragen benötigen zusätzliche Einwilligung und können kostenpflichtig sein."
             android:lineSpacingExtra="2dp"
             android:textSize="11sp"
             android:textColor="#7690A0"/>
