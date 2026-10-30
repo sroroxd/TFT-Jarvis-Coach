@@ -107,7 +107,7 @@ jobs:
           test "$PKG" = "com.pete.tftjarvis"
           test "$APK_CODE" = "$SOURCE_CODE"
           test "$APK_NAME" = "$SOURCE_NAME"
-          grep -q "launchable-activity: name='com.pete.tftjarvis.MainActivity'" "$RUNNER_TEMP/jarvis-badging.txt"
+          grep -q "launchable-activity: name='com.pete.tftjarvis.JarvisActivity'" "$RUNNER_TEMP/jarvis-badging.txt"
           if grep -q '^application-debuggable' "$RUNNER_TEMP/jarvis-badging.txt"; then
             echo "::error::Production APK is debuggable."
             exit 1
