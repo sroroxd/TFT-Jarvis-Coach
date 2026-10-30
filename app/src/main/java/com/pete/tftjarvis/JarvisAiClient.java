@@ -25,7 +25,7 @@ final class JarvisAiClient {
 
     static final class CancelToken {
         private volatile boolean canceled;
-        private volatile HttpURLConnection connection;
+        volatile HttpURLConnection connection;
 
         void cancel() {
             canceled = true;
