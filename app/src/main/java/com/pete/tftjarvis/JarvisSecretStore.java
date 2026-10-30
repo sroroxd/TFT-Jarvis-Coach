@@ -28,12 +28,25 @@ final class JarvisSecretStore {
     private static final String IV = "api_key_iv";
     private static final String ENABLED = "explicit_cost_consent";
     private static final String PROVIDER = "ai_provider";
+    private static final String HF_MODEL = "huggingface_model";
     static final String GEMINI = "gemini";
     static final String OPENAI = "openai";
+    static final String HUGGING_FACE = "huggingface";
 
     String provider(Context context) {
         String saved = prefs(context).getString(PROVIDER, OPENAI);
-        return GEMINI.equals(saved) ? GEMINI : OPENAI;
+        if (GEMINI.equals(saved)) return GEMINI;
+        if (HUGGING_FACE.equals(saved)) return HUGGING_FACE;
+        return OPENAI;
+    }
+
+    String huggingFaceModel(Context context) {
+        try {
+            return JarvisHuggingFaceClient.normalizeModel(
+                    prefs(context).getString(HF_MODEL, JarvisHuggingFaceClient.DEFAULT_MODEL));
+        } catch (IllegalArgumentException ignored) {
+            return JarvisHuggingFaceClient.DEFAULT_MODEL;
+        }
     }
 
     boolean isEnabled(Context context) {
@@ -46,9 +59,18 @@ final class JarvisSecretStore {
 
     synchronized void saveAndEnable(Context context, String key, String provider)
             throws GeneralSecurityException, IOException {
-        if (!GEMINI.equals(provider) && !OPENAI.equals(provider)) {
+        saveAndEnable(context, key, provider, JarvisHuggingFaceClient.DEFAULT_MODEL);
+    }
+
+    synchronized void saveAndEnable(Context context, String key, String provider, String model)
+            throws GeneralSecurityException, IOException {
+        if (!GEMINI.equals(provider) && !OPENAI.equals(provider)
+                && !HUGGING_FACE.equals(provider)) {
             throw new IllegalArgumentException("Unbekannter KI-Dienst.");
         }
+        String safeModel = HUGGING_FACE.equals(provider)
+                ? JarvisHuggingFaceClient.normalizeModel(model)
+                : JarvisHuggingFaceClient.DEFAULT_MODEL;
         if (key == null || key.trim().length() < 12 || key.length() > 1024) {
             throw new IllegalArgumentException("Kein gültiger API-Schlüssel eingegeben.");
         }
@@ -59,6 +81,7 @@ final class JarvisSecretStore {
                 .putString(ENCRYPTED, Base64.encodeToString(ciphertext, Base64.NO_WRAP))
                 .putString(IV, Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
                 .putString(PROVIDER, provider)
+                .putString(HF_MODEL, safeModel)
                 .putBoolean(ENABLED, true)
                 .apply();
     }
@@ -77,7 +100,7 @@ final class JarvisSecretStore {
     }
 
     synchronized void disableAndClear(Context context) {
-        prefs(context).edit().remove(ENCRYPTED).remove(IV).remove(PROVIDER)
+        prefs(context).edit().remove(ENCRYPTED).remove(IV).remove(PROVIDER).remove(HF_MODEL)
                 .putBoolean(ENABLED, false).commit();
         try {
             KeyStore store = KeyStore.getInstance("AndroidKeyStore");
