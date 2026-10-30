@@ -1,5 +1,16 @@
 # JARVIS — verbindliche Zielarchitektur (30.10.2026)
 
+## Identität und Systemgrenze — Nutzerentscheidung
+**ChatGPT in diesem Gespräch übernimmt die Rolle von JARVIS (die zentrale Assistenz).** Der Nutzer will **keinen zweiten, unabhängig auftretenden Chatbot**, sondern eine konsistente Assistenz über Chat und Telefon. Die Android-App „Jarvis“ ist als ergänzende Bedien- und Geräteschnittstelle zu verstehen: UI, Mikrofon (nur mit Einwilligung), Sprachausgabe, lokale Befehle und explizit freigegebene Gerätefunktionen.
+
+Wichtig: Eine eigenständige Android-APK kann **nicht automatisch diese laufende ChatGPT-Sitzung, ihre persönlichen Erinnerungen, Tools oder ChatGPT-Berechtigungen übernehmen**. Eine eigenständige KI-API-Anbindung wäre eine separate Assistenzinstanz mit explizit einzurichtenden Schnittstellen, Datenschutz und gegebenenfalls gesonderten Kosten. Niemals behaupten, die persönliche ChatGPT-Kontinuität sei bereits in der APK integriert.
+
+**Pragmatische Reihenfolge:**
+1. ChatGPT im bestehenden Gespräch als eigentlichen JARVIS nutzen und dort vorhandene Tools/Verbindungen nutzen, soweit verfügbar.
+2. Die eigenständige App nur für benötigte Android-Geräteaktionen und als optionales Frontend weiterentwickeln. Keine doppelte allgemeine KI-Logik in der App vortäuschen.
+3. Erst nach einer konkreten Integrationsentscheidung und technischer Prüfung eine bidirektionale KI-Anbindung entwickeln. Der lokale Preview-Befehlsrouter bleibt nur Infrastruktur, nicht die zentrale Intelligenz.
+4. TFT als optionales Modul belassen, nicht als Fundament.
+
 ## Produktentscheidung
 Wir entwickeln **eine einzige Android-Anwendung namens JARVIS**, orientiert am Funktionsprinzip von Tony Starks Assistenten: natürliche Sprache, Kontext, Werkzeuge, koordinierte Aufträge, proaktive Hinweise und spezialisierte Fähigkeiten. Ziel ist ein nützlicher, kontrollierbarer persönlicher Assistent — **keine Behauptung**, dass Filmfunktionen wie allgegenwärtige Gerätehoheit bereits existieren.
 
