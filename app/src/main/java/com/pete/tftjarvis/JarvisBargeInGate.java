@@ -50,7 +50,7 @@ final class JarvisBargeInGate {
             if (spokenVocabulary.contains(word)) overlapping++;
         }
         // Short hypotheses with vocabulary from TTS are too ambiguous for action.
-        if (heardWords.length == 1 && overlapping == 1) return true;
+        if (heardWords.length <= 2 && overlapping == heardWords.length) return true;
         return heardWords.length >= 3 && overlapping * 4 >= heardWords.length * 3;
     }
 
