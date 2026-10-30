@@ -51,14 +51,6 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     private int speechErrorStreak;
     private int autoAiRequests;
     private long lastVoiceAiRequestMs;
-    private final Runnable voiceRestart = () -> {
-        if (handsFreeEnabled && appVisible && !voiceWaitingForReply
-                && !speechInProgress && !aiBusy && voiceInput != null
-                && !voiceInput.isListening()) {
-            voiceInput.startOrCancel();
-        }
-    };
-
     private EditText commandInput;
     private TextView output;
     private TextView systemStatus;
@@ -81,6 +73,15 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     private Future<?> currentAiTask;
     private long requestGeneration;
     private boolean aiBusy;
+
+    private final Runnable voiceRestart = () -> {
+        if (handsFreeEnabled && appVisible && !voiceWaitingForReply
+                && !speechInProgress && !aiBusy && voiceInput != null
+                && !voiceInput.isListening()) {
+            voiceInput.startOrCancel();
+        }
+    };
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
