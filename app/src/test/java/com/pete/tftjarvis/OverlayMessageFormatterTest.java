@@ -46,4 +46,14 @@ public class OverlayMessageFormatterTest {
         assertFalse(detail.contains("EVIDENZ"));
         assertFalse(detail.contains("SPRACHE"));
     }
+
+    @Test
+    public void timeoutIsNotReportedAsProviderOverload() {
+        assertEquals("Zeitüberschreitung – KI-Antwort dauerte zu lange",
+                OverlayMessageFormatter.transientFailureMessage(new Exception("Gemini antwortet gerade zu langsam – erneut versuchen")));
+        assertEquals("Zeitüberschreitung – KI-Antwort dauerte zu lange",
+                OverlayMessageFormatter.transientFailureMessage(new java.net.SocketTimeoutException()));
+        assertEquals("KI vorübergehend nicht verfügbar – später erneut versuchen",
+                OverlayMessageFormatter.transientFailureMessage(new Exception("HTTP 503 unavailable")));
+    }
 }
