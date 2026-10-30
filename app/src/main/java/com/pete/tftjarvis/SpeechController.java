@@ -76,6 +76,7 @@ public class SpeechController {
     private String activeUtteranceId = "";
     private String activeKey = "";
 
+    private String lastAnalysisText = "";
     private String lastSpokenKey = "";
     private long lastSpokenAt = 0L;
 
@@ -291,6 +292,7 @@ public class SpeechController {
 
     public synchronized SpeechResult speakCall(String phase, String call, String priority,
                                                String confidence, boolean manualRequest, boolean speechMuted) {
+        lastAnalysisText = call == null ? "" : call.trim();
         if (speechMuted) {
             updateEventState(STATE_MUTED, "Sprachausgabe in Einstellungen stummgeschaltet");
             return new SpeechResult(false, STATE_MUTED, lastEventReason);
@@ -359,8 +361,18 @@ public class SpeechController {
         return executeSpeak(key, call, now);
     }
 
+    /** Explicit reading only: never sends a new cloud request or presents old text as current. */
+    public synchronized SpeechResult speakLastAnalysis(boolean speechMuted) {
+        if (lastAnalysisText.isEmpty()) {
+            updateEventState(STATE_POLICY_FILTERED, "Noch keine Analyse zum Vorlesen vorhanden");
+            return new SpeechResult(false, STATE_POLICY_FILTERED, lastEventReason);
+        }
+        return speakTestPhrase("Letzte Analyse, möglicherweise nicht mehr aktuell. "
+                + lastAnalysisText, speechMuted);
+    }
+
     public synchronized SpeechResult speakTestAnnouncement(boolean speechMuted) {
-        return speakTestPhrase("JARVIS bereit. Artefakt erkannt.", speechMuted);
+        return speakTestPhrase("JARVIS bereit. Dies ist eine Testansage.", speechMuted);
     }
 
     public synchronized SpeechResult speakTestPhrase(String testCall, boolean speechMuted) {
@@ -386,7 +398,7 @@ public class SpeechController {
         }
 
         if (testCall == null || testCall.trim().isEmpty()) {
-            testCall = "JARVIS bereit. Artefakt erkannt.";
+            testCall = "JARVIS bereit. Dies ist eine Testansage.";
         }
         String testKey = "TEST|" + System.currentTimeMillis();
         return executeSpeak(testKey, testCall, System.currentTimeMillis());
@@ -470,6 +482,7 @@ public class SpeechController {
 
     public synchronized void resetMemory() {
         stop();
+        lastAnalysisText = "";
         lastSpokenKey = "";
         lastSpokenAt = 0L;
     }
