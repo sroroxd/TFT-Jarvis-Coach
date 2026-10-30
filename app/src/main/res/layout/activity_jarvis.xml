@@ -249,7 +249,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="26dp"
             android:layout_marginBottom="9dp"
-            android:text="SYSTEM & DATENSCHUTZ"
+            android:text="SYSTEM &amp; DATENSCHUTZ"
             android:letterSpacing="0.15"
             android:textColor="#7899AA"
             android:textSize="10sp"
