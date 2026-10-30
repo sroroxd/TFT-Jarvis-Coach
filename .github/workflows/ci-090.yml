@@ -1,7 +1,7 @@
 name: JARVIS 0.9 Android CI
 on:
   push:
-    branches: [ "feature/jarvis-090-perception" ]
+    branches: [ "feature/jarvis-090-perception", "feature/independent-jarvis-core-20261030" ]
   pull_request:
     branches: [ "main" ]
 permissions:
