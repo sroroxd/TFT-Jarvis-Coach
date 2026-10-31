@@ -114,10 +114,7 @@ public final class JarvisOfflineChatActivity extends Activity {
             File imported = null;
             try (InputStream stream = getContentResolver().openInputStream(uri)) {
                 JarvisGgufModelStore.ImportedModel result =
-                        JarvisGgufModelStore.importVerified(stream, directory);
-                if (!VERIFIED_MODEL_SHA256.equalsIgnoreCase(result.sha256)) {
-                    throw new java.io.IOException("Modell-SHA256 nicht freigegeben; nur geprüfte Qwen-Q4_K_M-Testdatei verwenden.");
-                }
+                        JarvisGgufModelStore.importVerified(stream, directory, VERIFIED_MODEL_SHA256);
                 imported = result.file;
                 message = "Import: " + result.bytes + " Bytes, SHA-256 " + result.sha256
                         + ". Native Modellprüfung läuft …";
