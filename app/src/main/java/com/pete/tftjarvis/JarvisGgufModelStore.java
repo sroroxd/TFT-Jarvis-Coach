@@ -9,11 +9,16 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 /** Validates and atomically imports GGUF into private app storage. NOT an inference engine. */
 final class JarvisGgufModelStore {
     static final long MAX_MODEL_BYTES = 3L * 1024 * 1024 * 1024;
     private static final int HEADER_BYTES = 24;
+    // A 24-byte magic/header is not a usable model. Require substantial payload,
+    // while the native runtime must still perform full GGUF structural validation.
+    static final long MIN_MODEL_BYTES = 1024L * 1024L;
     private static final String NAME = "local-model.gguf";
 
     static final class Header {
@@ -50,7 +55,24 @@ final class JarvisGgufModelStore {
     }
 
     /** Source is opened via ACTION_OPEN_DOCUMENT in a later UI milestone. */
+    static final class ImportedModel {
+        final File file;
+        final String sha256;
+        final long bytes;
+        ImportedModel(File file, String sha256, long bytes) {
+            this.file = file; this.sha256 = sha256; this.bytes = bytes;
+        }
+    }
+
+    static ImportedModel importVerified(InputStream source, File privateDirectory) throws IOException {
+        return importInternal(source, privateDirectory);
+    }
+
     static File importFrom(InputStream source, File privateDirectory) throws IOException {
+        return importInternal(source, privateDirectory).file;
+    }
+
+    private static ImportedModel importInternal(InputStream source, File privateDirectory) throws IOException {
         if (source == null) throw new IOException("Modell konnte nicht geöffnet werden.");
         if (privateDirectory == null || (!privateDirectory.isDirectory()
                 && !privateDirectory.mkdirs())) {
@@ -64,6 +86,9 @@ final class JarvisGgufModelStore {
         boolean published = false;
         try {
             long written = 0L;
+            final MessageDigest digest;
+            try { digest = MessageDigest.getInstance("SHA-256"); }
+            catch (NoSuchAlgorithmException e) { throw new IOException("SHA-256 nicht verfügbar.", e); }
             byte[] chunk = new byte[65536];
             try (FileOutputStream output = new FileOutputStream(partial)) {
                 int n;
@@ -73,9 +98,13 @@ final class JarvisGgufModelStore {
                         throw new IOException("GGUF-Modell zu groß (max. 3 GiB).");
                     }
                     written += n;
+                    digest.update(chunk, 0, n);
                     output.write(chunk, 0, n);
                 }
                 output.getFD().sync();
+            }
+            if (written < MIN_MODEL_BYTES) {
+                throw new IOException("GGUF-Datei ist zu klein für ein lokales Sprachmodell.");
             }
             try (FileInputStream verify = new FileInputStream(partial)) {
                 inspect(verify);
@@ -87,16 +116,26 @@ final class JarvisGgufModelStore {
                 throw new IOException("Keine sichere atomare Speicherung möglich.", e);
             }
             published = true;
-            return destination;
+            return new ImportedModel(destination, toHex(digest.digest()), written);
         } finally {
             if (!published && partial.exists()) partial.delete();
         }
     }
 
+    private static String toHex(byte[] bytes) {
+        final char[] digits = "0123456789abcdef".toCharArray();
+        char[] out = new char[bytes.length * 2];
+        for (int i = 0; i < bytes.length; i++) {
+            out[i * 2] = digits[(bytes[i] >>> 4) & 15];
+            out[i * 2 + 1] = digits[bytes[i] & 15];
+        }
+        return new String(out);
+    }
+
     static boolean isImported(File directory) {
         if (directory == null) return false;
         File f = new File(directory, NAME);
-        if (!f.isFile() || f.length() < HEADER_BYTES
+        if (!f.isFile() || f.length() < MIN_MODEL_BYTES
                 || f.length() > MAX_MODEL_BYTES) return false;
         try (FileInputStream in = new FileInputStream(f)) {
             inspect(in);
