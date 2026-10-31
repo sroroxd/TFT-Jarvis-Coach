@@ -11,7 +11,7 @@ Das Hauptziel ist ein **eigenständiger, möglichst kostenloser persönlicher An
 | **[Release-Notizen](docs/releases/0.9.21-beta7.md)** | Inhalt, Testschritte und Grenzen der aktuellen Beta | Kein Modell in der APK, kein verifizierter Live-Sprachchat |
 | **[Linkregister](docs/GITHUB-ACTIONS-ARTEFAKTE.md)** | Unterschied zwischen Actions-Runs, Artefakt-IDs, ZIP und direkter Release-APK | Kein erfundener Download-Link |
 
-**Aktuelle Entwicklung:** 0.9.20 (native lokale Text-KI als experimenteller Prototyp). Geplante signierte Testveröffentlichung: **0.9.21-beta7**, nach erfolgreicher GitHub-Release-CI. Modellgewichte werden nicht mitgeliefert; eine tatsächliche Offline-Generierung muss auf dem Galaxy S24 Ultra erst belegt werden.
+**Neueste signierte Beta:** [JARVIS 0.9.21-beta7 – APK direkt herunterladen](https://github.com/sroroxd/TFT-Jarvis-Coach/releases/download/v0.9.21-beta7/JARVIS-0.9.21-beta7.apk) ([Versionshinweise](https://github.com/sroroxd/TFT-Jarvis-Coach/releases/tag/v0.9.21-beta7)). Der Release ist eine als **Prerelease** gekennzeichnete Verpackung des experimentellen 0.9.20-Quellstands, **kein** bestätigter Live-Sprachchat. Die Modellgewichte sind nicht enthalten; die Offline-Generierung auf dem Galaxy S24 Ultra ist noch zu testen.
 
 **Status des Freisprechens:** Die ältere Android-Sprachdiensterkennung kann auf dem S24 Ultra den Fehler **Android-Code 10** (zu viele Starts) auslösen. Der kontinuierliche Offline-Sprachkern und zuverlässige Unterbrechbarkeit sind noch nicht abgenommen. Keine Vollfunktionalität behaupten.
 
