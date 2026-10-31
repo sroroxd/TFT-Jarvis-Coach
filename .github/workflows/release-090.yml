@@ -109,7 +109,7 @@ jobs:
           fi
       - name: Retain verified signed APK as a CI artifact (not a release)
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: JARVIS-verified-signed-apk-${{ github.run_id }}
           path: app/build/outputs/apk/release/app-release.apk
