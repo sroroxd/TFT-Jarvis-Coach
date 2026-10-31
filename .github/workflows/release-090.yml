@@ -73,7 +73,7 @@ jobs:
           set -euo pipefail
           VERSION=$(sed -nE "s/^[[:space:]]*versionName[[:space:]]+'([^']+)'.*/\1/p" app/build.gradle | head -n 1)
           CODE=$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\1/p' app/build.gradle | head -n 1)
-          if [[ ! "$VERSION" =~ ^0\.9\.[0-9]+(-[a-z0-9.]+)?$ ]] || [ -z "$CODE" ] || [ "$CODE" -le 29 ]; then
+          if [[ ! "$VERSION" =~ ^0\.9\.[0-9]+(-[a-z0-9][a-z0-9.-]*)?$ ]] || [ -z "$CODE" ] || [ "$CODE" -le 29 ]; then
             echo "::error::Release version or monotonically increasing versionCode invalid."
             exit 1
           fi
@@ -99,14 +99,28 @@ jobs:
             echo "::error::APK certificate does not match the permanent signing identity. Refusing release."
             exit 1
           fi
+          # An experimental APK is not a production release merely because CI passed.
+          # Preserve the signed candidate as a short-lived Actions artifact instead.
+          if [[ "$VERSION" == *-experimental* || "$VERSION" == *-preview* || "$VERSION" == *-test* ]]; then
+            echo "::notice::Experimental build $VERSION verified; no GitHub Release created. Download via the current workflow run's Artifacts section."
+            exit 0
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "::error::Version $TAG has already been published. Increase versionName and versionCode."
             exit 1
           fi
           cp "$APK" "JARVIS-$VERSION.apk"
           extra=()
-          if [[ "$VERSION" == *-beta* ]]; then extra+=(--prerelease); fi
+          if [[ "$VERSION" == *-* ]]; then extra+=(--prerelease); fi
           gh release create "$TAG" "JARVIS-$VERSION.apk" \
             --target "$GITHUB_SHA" --title "JARVIS $VERSION" \
             --notes "Direkt installierbare, dauerhaft signierte Android-APK. Voraussetzung für Updates: dieselbe Signatur und steigender versionCode. Beim Wechsel von älteren Debug-APKs kann einmalig eine Neuinstallation nötig sein." \
             "${extra[@]}"
+      - name: Retain verified signed APK as a CI artifact (not a release)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-verified-signed-apk-${{ github.run_id }}
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 7
