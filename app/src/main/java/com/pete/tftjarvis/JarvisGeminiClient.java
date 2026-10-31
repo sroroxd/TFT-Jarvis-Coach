@@ -19,12 +19,26 @@ import java.util.List;
  */
 final class JarvisGeminiClient {
     static final String MODEL = "gemini-2.5-flash";
-    private static final String ENDPOINT =
-            "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent";
+    private static final String API_ROOT = "https://generativelanguage.googleapis.com/v1beta/";
     private static final int MAX_RESPONSE_BYTES = 262144;
+
+    static String normalizeModel(String supplied) {
+        String model = supplied == null ? "" : supplied.trim();
+        if (model.startsWith("models/")) model = model.substring("models/".length());
+        if (!model.matches("gemini-[a-zA-Z0-9._-]{2,96}")) {
+            throw new IllegalArgumentException("Gemini-Modell muss mit gemini- beginnen.");
+        }
+        return model;
+    }
 
     String answer(String apiKey, String question, List<String[]> priorTurns,
                   JarvisAiClient.CancelToken token) throws IOException {
+        return answer(apiKey, MODEL, question, priorTurns, token);
+    }
+
+    String answer(String apiKey, String modelId, String question, List<String[]> priorTurns,
+                  JarvisAiClient.CancelToken token) throws IOException {
+        final String model = normalizeModel(modelId);
         if (apiKey == null || apiKey.trim().isEmpty()) throw new IOException("Kein Gemini-API-Schlüssel.");
         if (question == null || question.trim().isEmpty() || question.length() > 4000) {
             throw new IOException("Bitte eine Frage mit höchstens 4000 Zeichen eingeben.");
@@ -56,7 +70,7 @@ final class JarvisGeminiClient {
 
         HttpURLConnection conn = null;
         try {
-            conn = (HttpURLConnection) new URL(ENDPOINT).openConnection();
+            conn = (HttpURLConnection) new URL(API_ROOT + "models/" + model + ":generateContent").openConnection();
             token.connection = conn;
             if (token.isCanceled()) throw new IOException("Abgebrochen.");
             conn.setConnectTimeout(12000);
@@ -76,6 +90,22 @@ final class JarvisGeminiClient {
             if (status == 401 || status == 403) {
                 throw new IOException("Gemini-Zugang abgelehnt. API-Schlüssel, Modellzugriff und Region prüfen.");
             }
+            if (status == 404) {
+                // Read-only model discovery. No second generation request:
+                // free-tier status cannot be inferred from model availability.
+                String available = "";
+                try {
+                    available = listCompatibleModels(apiKey, token);
+                } catch (IOException ignored) {
+                    // A missing model remains actionable without listing support.
+                }
+                throw new IOException("Gemini-Modell " + model
+                        + " nicht verfügbar (HTTP 404). "
+                        + (available.isEmpty()
+                            ? "Bitte unter KI EINRICHTEN ein verfügbares Gemini-Modell wählen."
+                            : "Unter KI EINRICHTEN eines dieser Modelle wählen: " + available)
+                        + " Keine automatische kostenpflichtige Umschaltung.");
+            }
             if (status == 429) {
                 throw new IOException("Gemini-Kontingent aufgebraucht. Keine automatische kostenpflichtige Umschaltung.");
             }
@@ -94,6 +124,61 @@ final class JarvisGeminiClient {
             token.connection = null;
             if (conn != null) conn.disconnect();
         }
+    }
+
+    /**
+     * Read-only lookup on HTTP 404. No provider switch; no credential in URL.
+     */
+    private static String listCompatibleModels(String apiKey,
+            JarvisAiClient.CancelToken token) throws IOException {
+        if (token.isCanceled()) throw new IOException("Abgebrochen.");
+        HttpURLConnection listing = (HttpURLConnection) new URL(
+                API_ROOT + "models?pageSize=100").openConnection();
+        try {
+            token.connection = listing;
+            listing.setConnectTimeout(7000);
+            listing.setReadTimeout(10000);
+            listing.setRequestProperty("x-goog-api-key", apiKey);
+            listing.setRequestProperty("Accept", "application/json");
+            if (listing.getResponseCode() != 200) return "";
+            try (InputStream in = listing.getInputStream()) {
+                if (token.isCanceled()) throw new IOException("Abgebrochen.");
+                return supportedModels(readLimited(in));
+            }
+        } catch (JSONException invalid) {
+            throw new IOException("Gemini-Modellliste nicht lesbar.");
+        } finally {
+            listing.disconnect();
+        }
+    }
+
+    static String supportedModels(String json) throws JSONException {
+        JSONArray models = new JSONObject(json).optJSONArray("models");
+        if (models == null) return "";
+        StringBuilder out = new StringBuilder();
+        int count = 0;
+        for (int i = 0; i < models.length() && count < 5; i++) {
+            JSONObject entry = models.optJSONObject(i);
+            if (entry == null) continue;
+            JSONArray methods = entry.optJSONArray("supportedGenerationMethods");
+            boolean canGenerate = false;
+            if (methods != null) {
+                for (int j = 0; j < methods.length(); j++) {
+                    if ("generateContent".equals(methods.optString(j))) canGenerate = true;
+                }
+            }
+            if (!canGenerate) continue;
+            String name = entry.optString("name");
+            try {
+                name = normalizeModel(name);
+            } catch (IllegalArgumentException ignored) {
+                continue;
+            }
+            if (out.length() > 0) out.append(", ");
+            out.append(name);
+            count++;
+        }
+        return out.toString();
     }
 
     private static JSONObject message(String role, String text) throws JSONException {

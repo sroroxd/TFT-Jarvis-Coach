@@ -1,6 +1,7 @@
 package com.pete.tftjarvis;
 
 import android.Manifest;
+import android.content.Intent;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.os.Bundle;
@@ -112,6 +113,9 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_jarvis);
+        findViewById(R.id.jarvisOfflineLabButton).setOnClickListener(v ->
+                startActivity(new Intent(this, JarvisOfflineChatActivity.class)));
+
 
         commandInput = findViewById(R.id.jarvisCommand);
         output = findViewById(R.id.jarvisOutput);
@@ -477,6 +481,8 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         final String provider = keyStore.provider(this);
         final String hfModel = JarvisSecretStore.HUGGING_FACE.equals(provider)
                 ? keyStore.huggingFaceModel(this) : null;
+        final String geminiModel = JarvisSecretStore.GEMINI.equals(provider)
+                ? keyStore.geminiModel(this) : null;
         final String apiKey;
         try {
             apiKey = keyStore.load(this);
@@ -503,7 +509,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                 if (JarvisSecretStore.HUGGING_FACE.equals(provider)) {
                     answer = huggingFaceClient.answer(apiKey, hfModel, question, context, token);
                 } else if (JarvisSecretStore.GEMINI.equals(provider)) {
-                    answer = geminiClient.answer(apiKey, question, context, token);
+                    answer = geminiClient.answer(apiKey, geminiModel, question, context, token);
                 } else {
                     answer = aiClient.answer(apiKey, question, context, token);
                 }
@@ -566,23 +572,30 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
 
         EditText modelField = new EditText(this);
         modelField.setSingleLine(true);
-        modelField.setHint("Hugging-Face-Modell: Organisation/Modell");
-        modelField.setText(keyStore.huggingFaceModel(this));
+        modelField.setHint("Gemini-Modell, z. B. gemini-2.5-flash");
+        modelField.setText(keyStore.geminiModel(this));
         modelField.setInputType(InputType.TYPE_CLASS_TEXT);
         layout.addView(modelField);
         modelField.setVisibility(
-                providerPicker.getSelectedItemPosition() == 2 ? View.VISIBLE : View.GONE);
+                providerPicker.getSelectedItemPosition() != 1 ? View.VISIBLE : View.GONE);
         providerPicker.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(
                     AdapterView<?> parent, View view, int position, long id) {
-                modelField.setVisibility(position == 2 ? View.VISIBLE : View.GONE);
+                modelField.setVisibility(position == 1 ? View.GONE : View.VISIBLE);
+                if (position == 2) {
+                    modelField.setHint("Hugging-Face-Modell: Organisation/Modell");
+                    modelField.setText(keyStore.huggingFaceModel(JarvisActivity.this));
+                } else if (position == 0) {
+                    modelField.setHint("Gemini-Modell, z. B. gemini-2.5-flash");
+                    modelField.setText(keyStore.geminiModel(JarvisActivity.this));
+                }
             }
             @Override public void onNothingSelected(AdapterView<?> parent) { }
         });
 
         EditText field = new EditText(this);
         field.setSingleLine(true);
-        field.setHint("Persönlicher API-Schlüssel");
+        field.setHint("Persönlicher API-Schlüssel (bei Gemini-Modellwechsel optional)");
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         field.setImportantForAutofill(EditText.IMPORTANT_FOR_AUTOFILL_NO);
         layout.addView(field);
@@ -625,8 +638,27 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                                 : (selection == 0
                                     ? JarvisSecretStore.GEMINI : JarvisSecretStore.OPENAI);
                         String newKey = field.getText().toString().trim();
+                        if (JarvisSecretStore.GEMINI.equals(selectedProvider)) {
+                            try {
+                                JarvisGeminiClient.normalizeModel(modelField.getText().toString());
+                            } catch (IllegalArgumentException badModel) {
+                                modelField.setError("Modell-ID muss mit gemini- beginnen.");
+                                return;
+                            }
+                            // Existing Gemini key remains encrypted and untouched.
+                            if (newKey.isEmpty() && keyStore.isConfigured(this)
+                                    && JarvisSecretStore.GEMINI.equals(keyStore.provider(this))) {
+                                cancelAiRequest();
+                                keyStore.updateGeminiModel(this, modelField.getText().toString());
+                                sessionTurns.clear();
+                                output.setText("Gemini-Modell geändert. Dein bestehender Schlüssel bleibt gespeichert. Bitte KI FRAGEN testen.");
+                                updateStatus();
+                                dialog.dismiss();
+                                return;
+                            }
+                        }
                         if (newKey.isEmpty()) {
-                            field.setError("Token fehlt. Erstelle ihn auf huggingface.co/settings/tokens.");
+                            field.setError("API-Schlüssel fehlt. Bestehendes Gemini-Modell kannst du ohne Neueingabe ändern.");
                             return;
                         }
                         if (newKey.length() < 12 || newKey.length() > 1024) {
@@ -648,7 +680,8 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                         }
                         cancelAiRequest();
                         keyStore.saveAndEnable(this, newKey,
-                                selectedProvider, modelField.getText().toString());
+                                selectedProvider, modelField.getText().toString(),
+                                modelField.getText().toString());
                         voiceAiConsent = false;
                         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                                 .putBoolean(VOICE_AI_PREF, false).apply();
