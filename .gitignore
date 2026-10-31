@@ -8,3 +8,6 @@ local.properties
 *.p12
 *.jks
 *.keystore
+
+# Issue #31: never commit local TFT HUD screenshots, manual labels or test logs
+/replay-private/
