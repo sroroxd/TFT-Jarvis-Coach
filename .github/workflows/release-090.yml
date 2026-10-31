@@ -65,7 +65,7 @@ jobs:
         env:
           JARVIS_SIGNING_PASSWORD: ${{ secrets.JARVIS_SIGNING_PASSWORD }}
         run: gradle --no-daemon testDebugUnitTest assembleRelease --stacktrace
-      - name: Verify APK signer and publish direct download
+      - name: Verify signed APK and classify version
         if: steps.signing.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -100,22 +100,13 @@ jobs:
             exit 1
           fi
           # An experimental APK is not a production release merely because CI passed.
-          # Preserve the signed candidate as a short-lived Actions artifact instead.
+          echo "JARVIS_RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
           if [[ "$VERSION" == *-experimental* || "$VERSION" == *-preview* || "$VERSION" == *-test* ]]; then
-            echo "::notice::Experimental build $VERSION verified; no GitHub Release created. Download via the current workflow run's Artifacts section."
-            exit 0
+            echo "JARVIS_EXPERIMENTAL=true" >> "$GITHUB_ENV"
+            echo "::notice::Experimental build $VERSION verified; archive in Actions only. No GitHub Release will be created."
+          else
+            echo "JARVIS_EXPERIMENTAL=false" >> "$GITHUB_ENV"
           fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::Version $TAG has already been published. Increase versionName and versionCode."
-            exit 1
-          fi
-          cp "$APK" "JARVIS-$VERSION.apk"
-          extra=()
-          if [[ "$VERSION" == *-* ]]; then extra+=(--prerelease); fi
-          gh release create "$TAG" "JARVIS-$VERSION.apk" \
-            --target "$GITHUB_SHA" --title "JARVIS $VERSION" \
-            --notes "Direkt installierbare, dauerhaft signierte Android-APK. Voraussetzung für Updates: dieselbe Signatur und steigender versionCode. Beim Wechsel von älteren Debug-APKs kann einmalig eine Neuinstallation nötig sein." \
-            "${extra[@]}"
       - name: Retain verified signed APK as a CI artifact (not a release)
         if: success()
         uses: actions/upload-artifact@v4
@@ -124,3 +115,23 @@ jobs:
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 7
+      - name: Publish eligible version to GitHub Releases
+        if: success() && env.JARVIS_EXPERIMENTAL == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="$JARVIS_RELEASE_VERSION"
+          TAG="v$VERSION"
+          APK="app/build/outputs/apk/release/app-release.apk"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Version $TAG is already published; increase versionName and versionCode."
+            exit 1
+          fi
+          cp "$APK" "JARVIS-$VERSION.apk"
+          extra=()
+          if [[ "$VERSION" == *-* ]]; then extra+=(--prerelease); fi
+          gh release create "$TAG" "JARVIS-$VERSION.apk" \
+            --target "$GITHUB_SHA" --title "JARVIS $VERSION" \
+            --notes "Directly installable signed Android APK. Updates require same signature and higher versionCode. Do not replace working installs until device QA." \
+            "${extra[@]}"
