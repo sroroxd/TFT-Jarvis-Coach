@@ -52,7 +52,7 @@ Bestehenden `jarvis-core` und Android-App-Grenze als verbindlich ansehen; noch k
 
 **Gate:** Start ohne TFT-/Bildschirmfreigabe; Basis-Textbefehle offline, reproduzierbare CI. **Status:** teilweise bereits umgesetzt; Haupt-App-Shell noch nicht vollständig getrennt.
 
-### G1 – echte lokale **Text-KI** (**JETZT PRIORITÄT 1**)
+### G1 – echte lokale **Text-KI** (**JETZT PRIORITÄT 1**; [Issue #58](https://github.com/sroroxd/TFT-Jarvis-Coach/issues/58))
 
 Vor weiteren Voice-Funktionen **ein** kleines, lizenziertes und SHA-verifiziertes GGUF im bestehenden Offline-Labor laden. Gepinnten nativen ARM64-Build, realen Token-Output, korrekten Qwen-Chat-Template-/Stop-Token-Pfad sowie Abbruch/Unload prüfen. Kein ungefragter Download; Nutzer importiert die Modell-Datei selbst. Bei qualitativ ungenügender 0,5B-Baseline kompatible größere Modelle nur nach RAM-/Latenztest bewerten.
 
