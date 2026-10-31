@@ -172,7 +172,7 @@ public class HudPerceptionBenchmarkTest {
         double fpRateNonGame = nonGameFixtures == 0 ? 0.0 : (double) nonGameFalsePositives / nonGameFixtures;
 
         System.out.println("=== SYNTHETIC OCR-CANDIDATE TESTS ONLY; NO REAL DEVICE ACCURACY ===");
-        System.out.println("HP: not measured (own-player anchor not validated).");
+        System.out.println("HP: no recognition supported; labelled HP rejection is counted, not scored as success.");
         System.out.println("Phase: previous state passed as INPUT only; NOT inferred or scored.");
         System.out.println("=== OFFLINE HUD PERCEPTION BENCHMARK RESULTS ===");
         System.out.println(String.format("Total Fixtures: %d (Game: %d, Non-Game: %d)",
@@ -217,8 +217,10 @@ public class HudPerceptionBenchmarkTest {
     @Test public void incorrectPredictionCountsAsFalsePositiveAndFalseNegative() {
         // A wrong prediction is simultaneously an incorrect claim and a missed truth.
         FieldMetrics metrics = new FieldMetrics();
-        metrics.fp++;
-        metrics.fn++;
+        metrics.record("wrong-value-regression", "STAGE", "3-2", "4-1");
+        assertEquals(1, metrics.fp);
+        assertEquals(1, metrics.fn);
+        assertEquals(1, metrics.wrong);
         assertEquals(0.0, metrics.precision(), 0.0001);
         assertEquals(0.0, metrics.recall(), 0.0001);
     }
