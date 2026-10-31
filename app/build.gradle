@@ -10,8 +10,10 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 47
-        versionName '0.9.17-gemini-model-preview'
+        ndk { abiFilters 'arm64-v8a' }
+        externalNativeBuild { cmake { cppFlags '-std=c++17' } }
+        versionCode 48
+        versionName '0.9.18-local-runtime-experimental'
     }
 
     // Stable release signing is reused for every subsequent Android APK update.
@@ -32,11 +34,18 @@ android {
     buildTypes {
         debug {
             // Version-specific test package avoids CI debug-signature clashes with older previews.
-            applicationIdSuffix '.jarvis0917'
+            applicationIdSuffix '.jarvislocal'
             versionNameSuffix '-preview'
         }
         release {
             signingConfig signingConfigs.stableRelease
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.22.1'
         }
     }
 
