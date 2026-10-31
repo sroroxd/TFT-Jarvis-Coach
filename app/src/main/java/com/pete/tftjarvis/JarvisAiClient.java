@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -69,7 +68,7 @@ final class JarvisAiClient {
 
         HttpURLConnection conn = null;
         try {
-            conn = (HttpURLConnection) new URL(ENDPOINT).openConnection();
+            conn = JarvisHttpsTransport.open(ENDPOINT, "api.openai.com");
             token.connection = conn;
             if (token.isCanceled()) throw new IOException("Abgebrochen.");
             conn.setConnectTimeout(12000);
