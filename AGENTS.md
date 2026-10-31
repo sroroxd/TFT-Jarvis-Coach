@@ -1,8 +1,18 @@
 # JARVIS – verbindliche Arbeitsregeln für Code-Assistenten
 
 ## Projektziel und Scope
-Native deutsche TFT-JARVIS-Android-App für Samsung Galaxy S24 Ultra.
-Aktuelle Quellbasis steht auf `main`; Architektur und offene Aufgaben:
+Eigenständiger deutscher **JARVIS-Sprachassistent** für Samsung Galaxy S24 Ultra,
+**local first** und ohne automatisch entstehende API-Kosten. TFT ist ein
+**optionaler späterer Skill**, nicht das Fundament des allgemeinen JARVIS.
+
+**Verbindliche Priorisierung und technische Abnahmetore:**
+`docs/JARVIS-MASTER-SEQUENCE.md` / Issue #57. Reihenfolge:
+G0 Core/Grenzen → **G1 echte lokale Textinferenz (aktiv)** → G2 kontinuierliche
+Offline-Spracheingabe → G3 natürliche Dialogschleife/TTS/Unterbrechen →
+G4 lokale Fähigkeiten → G5 optional TFT → G6 sichere S24-Freigabe.
+Erst auf S24 gemessene Fähigkeiten als funktionsfähig bezeichnen.
+
+Aktuelle Quellbasis steht auf `main`; ältere, weiterhin relevante TFT-Referenzen:
 `docs/AUDIT-093.md`, `docs/OFFLINE-REPLAY-094.md`,
 `docs/DEEP-RESEARCH-095.md`, GitHub Issue #18.
 
