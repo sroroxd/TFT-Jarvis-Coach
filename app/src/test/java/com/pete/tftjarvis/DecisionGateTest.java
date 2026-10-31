@@ -41,4 +41,16 @@ public class DecisionGateTest {
                 Collections.singletonList("Ashe"), null);
         assertFalse(DecisionGate.validate(raw, new MatchState(), null).blocked);
     }
+
+    @Test public void whitespacePaddedBuyCallWithColonIsRecognized() {
+        OpenAIClient.CoachResult raw = result("PLANUNG", "  Kauf: Ashe ",
+                Collections.singletonList("Ashe"), null);
+        assertFalse(DecisionGate.validate(raw, new MatchState(), null).blocked);
+    }
+
+    @Test public void forbiddenCombatActionWithLeadingWhitespaceIsBlocked() {
+        OpenAIClient.CoachResult raw = result("KAMPF", "  kauf Ashe",
+                Collections.singletonList("Ashe"), null);
+        assertTrue(DecisionGate.validate(raw, new MatchState(), null).blocked);
+    }
 }
