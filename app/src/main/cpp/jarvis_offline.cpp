@@ -97,12 +97,17 @@ Java_com_pete_tftjarvis_JarvisOfflineEngine_nativeGenerate(
         if (llama_vocab_is_eog(vocab, next)) break;
         char piece[2048];
         int len = llama_token_to_piece(vocab, next, piece, sizeof(piece), 0, false);
-        if (len > 0 && len <= (int) sizeof(piece)) output.append(piece, (size_t) len);
+        // Negative means the token piece did not fit. Silently skipping it
+        // would corrupt UTF-8 output while reporting a successful response.
+        if (len < 0 || len > (int) sizeof(piece)) return env->NewStringUTF("");
+        if (len > 0) output.append(piece, (size_t) len);
         llama_batch batch = llama_batch_get_one(&next, 1);
         // A failed decode invalidates this turn; do not present a partial
         // answer as if the local model completed generation successfully.
         if (llama_decode(ctx, batch) != 0) return env->NewStringUTF("");
     }
+    // Cancellation must never surface an incomplete response as successful.
+    if (stop_requested) return env->NewStringUTF("");
     // NewStringUTF requires modified UTF-8; construct a Java String via UTF-8 charset.
     jbyteArray bytes = env->NewByteArray((jsize) output.size());
     if (!bytes) return nullptr;

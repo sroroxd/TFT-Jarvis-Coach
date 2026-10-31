@@ -36,4 +36,20 @@ public class JarvisNativeSourceGuardTest {
         assertTrue(code.contains("JARVIS_LLAMA_ACTUAL_SHA STREQUAL JARVIS_LLAMA_EXPECTED_SHA"));
         assertTrue(code.contains("message(FATAL_ERROR"));
     }
+
+    @Test public void canceledGenerationMustNotPublishPartialAnswer() throws Exception {
+        String code = source("src/main/cpp/jarvis_offline.cpp");
+        int loop = code.indexOf("for (int i = 0; i < limit && !stop_requested; ++i)");
+        int check = code.indexOf("if (stop_requested) return env->NewStringUTF(\"\");", loop);
+        int construct = code.indexOf("jbyteArray bytes = env->NewByteArray", loop);
+        assertTrue("Cancellation must be checked after the token loop", loop >= 0 && check > loop);
+        assertTrue("Partial response must be rejected before Java String creation",
+                construct > check);
+    }
+
+    @Test public void invalidTokenPieceMustFailClosed() throws Exception {
+        String code = source("src/main/cpp/jarvis_offline.cpp");
+        assertTrue(code.contains("if (len < 0 || len > (int) sizeof(piece)) return env->NewStringUTF(\"\");"));
+        assertTrue(code.contains("if (len > 0) output.append(piece, (size_t) len);"));
+    }
 }
