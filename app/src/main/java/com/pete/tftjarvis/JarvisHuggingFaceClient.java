@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -82,12 +81,11 @@ final class JarvisHuggingFaceClient {
         JSONObject request = buildRequest(model, question, history);
         HttpURLConnection conn = null;
         try {
-            conn = (HttpURLConnection) new URL(ENDPOINT).openConnection();
+            conn = JarvisHttpsTransport.open(ENDPOINT, "router.huggingface.co");
             token.connection = conn;
             if (token.isCanceled()) throw new IOException("Abgebrochen.");
             conn.setConnectTimeout(12000);
             conn.setReadTimeout(35000);
-            conn.setInstanceFollowRedirects(false); // Never forward Bearer token.
             conn.setRequestMethod("POST");
             conn.setDoOutput(true);
             conn.setUseCaches(false);
