@@ -73,7 +73,7 @@ public class JarvisGgufModelStoreTest {
     @Test public void badImportDoesNotReplaceOldModel() throws Exception {
         File root = tmp.newFolder();
         JarvisGgufModelStore.importFrom(
-                new ByteArrayInputStream(gguf(3, 10, 20)), root);
+                new ByteArrayInputStream(model()), root);
         try {
             JarvisGgufModelStore.importFrom(
                     new ByteArrayInputStream(new byte[]{0, 1, 2}), root);
