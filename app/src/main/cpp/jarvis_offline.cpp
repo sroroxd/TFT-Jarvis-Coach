@@ -75,8 +75,11 @@ Java_com_pete_tftjarvis_JarvisOfflineEngine_nativeGenerate(
     const int n = llama_tokenize(vocab, prompt.c_str(), (int) prompt.size(), nullptr, 0, true, kParseSpecial);
     if (n >= 0 || -n > 1700 || -n <= 0) return env->NewStringUTF("");
     std::vector<llama_token> tokens((size_t) -n);
-    if (llama_tokenize(vocab, prompt.c_str(), (int) prompt.size(),
-                      tokens.data(), (int) tokens.size(), true, kParseSpecial) < 0) {
+    // The sizing and actual tokenization passes must agree. Never decode
+    // uninitialized token slots if the tokenizer unexpectedly returns fewer.
+    const int actualTokens = llama_tokenize(vocab, prompt.c_str(), (int) prompt.size(),
+                                           tokens.data(), (int) tokens.size(), true, kParseSpecial);
+    if (actualTokens != (int) tokens.size()) {
         return env->NewStringUTF("");
     }
     int offset = 0;
@@ -96,7 +99,9 @@ Java_com_pete_tftjarvis_JarvisOfflineEngine_nativeGenerate(
         int len = llama_token_to_piece(vocab, next, piece, sizeof(piece), 0, false);
         if (len > 0 && len <= (int) sizeof(piece)) output.append(piece, (size_t) len);
         llama_batch batch = llama_batch_get_one(&next, 1);
-        if (llama_decode(ctx, batch) != 0) break;
+        // A failed decode invalidates this turn; do not present a partial
+        // answer as if the local model completed generation successfully.
+        if (llama_decode(ctx, batch) != 0) return env->NewStringUTF("");
     }
     // NewStringUTF requires modified UTF-8; construct a Java String via UTF-8 charset.
     jbyteArray bytes = env->NewByteArray((jsize) output.size());
