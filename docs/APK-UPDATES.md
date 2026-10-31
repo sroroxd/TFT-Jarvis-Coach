@@ -30,10 +30,11 @@ möglich, sofern derselbe Schlüssel weiter verwendet und der versionCode erhöh
    **passwortverschlüsselte** PKCS#12-Datei (`.asc`) und der **öffentliche**
    SHA-256-Zertifikatsfingerabdruck. Der private Schlüssel wird nicht unverschlüsselt
    in Git veröffentlicht. Die Datei oder den Fingerabdruck niemals ersetzen.
-5. Der Bootstrap-Commit startet automatisch **Publish directly installable JARVIS APK**.
-   Dieser Workflow testet, erstellt die signierte APK, prüft deren Zertifikat
-   gegen den gespeicherten Fingerabdruck und veröffentlicht einen GitHub-Release
-   mit **nur der APK-Datei**.
+5. Der Bootstrap-Commit startet **Publish directly installable JARVIS APK**.
+   Dieser Workflow testet, erstellt die signierte APK und prüft deren Zertifikat.
+   **Experimentelle Versionen werden nicht automatisch als Release veröffentlicht.**
+   Stattdessen steht nach erfolgreicher Prüfung vorübergehend ein Actions-Artefakt
+   zur Verfügung. Erst eine freigabefähige Version erhält einen GitHub-Release.
 6. Unter https://github.com/sroroxd/TFT-Jarvis-Coach/releases die APK
    direkt herunterladen. Für künftige Versionen zuerst `versionCode` erhöhen
    und `versionName` anpassen; ein Commit der `app/build.gradle` auf `main`
@@ -55,3 +56,9 @@ möglich, sofern derselbe Schlüssel weiter verwendet und der versionCode erhöh
 
 **Hinweis:** Ein grüner CI-Build bestätigt technische Tests und APK-Erstellung,
 nicht automatisch die korrekte Erkennung aller TFT-Situationen in einer Partie.
+
+## Richtige Links: GitHub Actions vs. Releases
+
+[Linkregister für Workflow-Läufe, Artefakt-IDs, API-Dokumentation und Release-Downloads](GITHUB-ACTIONS-ARTEFAKTE.md).
+
+Insbesondere [Workflow 41184041027](https://github.com/sroroxd/TFT-Jarvis-Coach/actions/runs/41184041027) ist **fehlgeschlagen** und hat **kein** Download-Artefakt. Sein erfolgreicher Build darf nicht als veröffentlichte APK verlinkt werden. Die zugehörige [GitHub-REST-Dokumentation](https://docs.github.com/en/rest/actions/artifacts?apiVersion=2022-11-28#download-an-artifact) beschreibt lediglich, wie eine tatsächlich vorhandene `artifact_id` als ZIP heruntergeladen wird.
