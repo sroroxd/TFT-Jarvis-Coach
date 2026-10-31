@@ -1,11 +1,13 @@
 package com.pete.tftjarvis;
 
 import android.Manifest;
+import android.content.Intent;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.content.pm.PackageManager;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
@@ -41,6 +43,7 @@ import java.util.concurrent.Future;
 public final class JarvisActivity extends Activity implements LocalControlCapability.Controls {
     private static final String PREFS = "jarvis_core_preferences";
     private static final String MUTED = "speech_muted";
+    private static final String VOICE_QUOTA_UNTIL = "speech_quota_until_wall_ms";
     private static final int MAX_CONTEXT_TURNS = 4;
     private static final String HANDSFREE_PREF = "foreground_handsfree_enabled";
     // New opt-in key: old wakeword-gated authorization MUST NOT carry over to wakewordless mode.
@@ -48,6 +51,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     private static final long RESTART_DELAY_MS = 850L;
 
     private final Handler voiceHandler = new Handler(Looper.getMainLooper());
+    private final JarvisSpeechStartGuard speechStartGuard = new JarvisSpeechStartGuard();
     private boolean handsFreeEnabled;
     private boolean voiceAiConsent;
     private boolean appVisible;
@@ -88,8 +92,16 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
 
     private final Runnable voiceRestart = () -> {
         if (canListenNow() && voiceInput != null && !voiceInput.isListening()) {
-            // Keep a microphone session available during TTS for provisional
-            // interruption detection. Not equivalent to acoustic echo cancellation.
+            long now = SystemClock.elapsedRealtime();
+            long waitingMs = speechStartGuard.waitBeforeStart(now);
+            if (waitingMs > 0L) {
+                queueNextListen(waitingMs);
+                return;
+            }
+            // Android SpeechRecognizer is a one-shot service. Throttle all
+            // starts including user reactivation to prevent runaway restart loops.
+            speechStartGuard.recordStart(now);
+            // Provisional barge-in only; no tested acoustic echo cancellation.
             bargeInCapture = speechInProgress;
             bargeInDetected = false;
             voiceInput.startOrCancel();
@@ -101,6 +113,9 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_jarvis);
+        findViewById(R.id.jarvisOfflineLabButton).setOnClickListener(v ->
+                startActivity(new Intent(this, JarvisOfflineChatActivity.class)));
+
 
         commandInput = findViewById(R.id.jarvisCommand);
         output = findViewById(R.id.jarvisOutput);
@@ -113,6 +128,12 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         speechMuted = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(MUTED, false);
         handsFreeEnabled = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(HANDSFREE_PREF, false);
         voiceAiConsent = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(VOICE_AI_PREF, false);
+        long blockedUntilWall = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getLong(VOICE_QUOTA_UNTIL, 0L);
+        long remainingQuotaMs = Math.max(0L, Math.min(
+                JarvisSpeechStartGuard.QUOTA_COOLDOWN_MS,
+                blockedUntilWall - System.currentTimeMillis()));
+        speechStartGuard.blockFor(SystemClock.elapsedRealtime(), remainingQuotaMs);
         core = new JarvisCoreEngine();
         core.register(new LocalControlCapability(this));
 
@@ -169,6 +190,14 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                         + " (Android-Code " + errorCode + ").";
                 if (handsFreeEnabled) {
                     if (JarvisSpeechRecovery.mustStop(errorCode)) {
+                        if (errorCode == JarvisSpeechRecovery.TOO_MANY_REQUESTS) {
+                            speechStartGuard.quotaExceeded(SystemClock.elapsedRealtime());
+                            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                    .putLong(VOICE_QUOTA_UNTIL,
+                                            System.currentTimeMillis()
+                                            + JarvisSpeechStartGuard.QUOTA_COOLDOWN_MS)
+                                    .apply();
+                        }
                         stopHandsFree();
                         output.setText("Freisprechen gestoppt: " + diagnostic + " "
                                 + JarvisSpeechRecovery.actionableHint(errorCode));
@@ -254,6 +283,18 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     }
 
     private void showHandsFreeConsent() {
+        long quotaUntil = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getLong(VOICE_QUOTA_UNTIL, 0L);
+        long blockedMs = Math.max(0L, Math.min(
+                JarvisSpeechStartGuard.QUOTA_COOLDOWN_MS,
+                quotaUntil - System.currentTimeMillis()));
+        if (blockedMs > 0L) {
+            long seconds = (blockedMs + 999L) / 1000L;
+            output.setText("Android-Sprachdienst begrenzt neue Starts (Code 10). "
+                    + "Erneuter Versuch frühestens in " + seconds
+                    + " Sekunden. Texteingabe und KI FRAGEN bleiben verfügbar.");
+            return;
+        }
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         int pad = (int) (getResources().getDisplayMetrics().density * 18);
@@ -326,7 +367,9 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     private void queueNextListen(long delayMs) {
         voiceHandler.removeCallbacks(voiceRestart);
         if (canListenNow()) {
-            voiceHandler.postDelayed(voiceRestart, Math.max(250L, delayMs));
+            long safeDelayMs = Math.max(Math.max(250L, delayMs),
+                    speechStartGuard.waitBeforeStart(SystemClock.elapsedRealtime()));
+            voiceHandler.postDelayed(voiceRestart, safeDelayMs);
         }
     }
 
@@ -438,6 +481,8 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         final String provider = keyStore.provider(this);
         final String hfModel = JarvisSecretStore.HUGGING_FACE.equals(provider)
                 ? keyStore.huggingFaceModel(this) : null;
+        final String geminiModel = JarvisSecretStore.GEMINI.equals(provider)
+                ? keyStore.geminiModel(this) : null;
         final String apiKey;
         try {
             apiKey = keyStore.load(this);
@@ -464,7 +509,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                 if (JarvisSecretStore.HUGGING_FACE.equals(provider)) {
                     answer = huggingFaceClient.answer(apiKey, hfModel, question, context, token);
                 } else if (JarvisSecretStore.GEMINI.equals(provider)) {
-                    answer = geminiClient.answer(apiKey, question, context, token);
+                    answer = geminiClient.answer(apiKey, geminiModel, question, context, token);
                 } else {
                     answer = aiClient.answer(apiKey, question, context, token);
                 }
@@ -527,23 +572,30 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
 
         EditText modelField = new EditText(this);
         modelField.setSingleLine(true);
-        modelField.setHint("Hugging-Face-Modell: Organisation/Modell");
-        modelField.setText(keyStore.huggingFaceModel(this));
+        modelField.setHint("Gemini-Modell, z. B. gemini-2.5-flash");
+        modelField.setText(keyStore.geminiModel(this));
         modelField.setInputType(InputType.TYPE_CLASS_TEXT);
         layout.addView(modelField);
         modelField.setVisibility(
-                providerPicker.getSelectedItemPosition() == 2 ? View.VISIBLE : View.GONE);
+                providerPicker.getSelectedItemPosition() != 1 ? View.VISIBLE : View.GONE);
         providerPicker.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(
                     AdapterView<?> parent, View view, int position, long id) {
-                modelField.setVisibility(position == 2 ? View.VISIBLE : View.GONE);
+                modelField.setVisibility(position == 1 ? View.GONE : View.VISIBLE);
+                if (position == 2) {
+                    modelField.setHint("Hugging-Face-Modell: Organisation/Modell");
+                    modelField.setText(keyStore.huggingFaceModel(JarvisActivity.this));
+                } else if (position == 0) {
+                    modelField.setHint("Gemini-Modell, z. B. gemini-2.5-flash");
+                    modelField.setText(keyStore.geminiModel(JarvisActivity.this));
+                }
             }
             @Override public void onNothingSelected(AdapterView<?> parent) { }
         });
 
         EditText field = new EditText(this);
         field.setSingleLine(true);
-        field.setHint("Persönlicher API-Schlüssel");
+        field.setHint("Persönlicher API-Schlüssel (bei Gemini-Modellwechsel optional)");
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         field.setImportantForAutofill(EditText.IMPORTANT_FOR_AUTOFILL_NO);
         layout.addView(field);
@@ -576,7 +628,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         dialog.setOnShowListener(unused -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
                 .setOnClickListener(v -> {
                     if (!agree.isChecked()) {
-                        output.setText("Keine Freigabe erteilt. KI bleibt unverändert.");
+                        agree.setError("Bitte zuerst die Datenübertragung bestätigen.");
                         return;
                     }
                     try {
@@ -585,9 +637,51 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                                 ? JarvisSecretStore.HUGGING_FACE
                                 : (selection == 0
                                     ? JarvisSecretStore.GEMINI : JarvisSecretStore.OPENAI);
+                        String newKey = field.getText().toString().trim();
+                        if (JarvisSecretStore.GEMINI.equals(selectedProvider)) {
+                            try {
+                                JarvisGeminiClient.normalizeModel(modelField.getText().toString());
+                            } catch (IllegalArgumentException badModel) {
+                                modelField.setError("Modell-ID muss mit gemini- beginnen.");
+                                return;
+                            }
+                            // Existing Gemini key remains encrypted and untouched.
+                            if (newKey.isEmpty() && keyStore.isConfigured(this)
+                                    && JarvisSecretStore.GEMINI.equals(keyStore.provider(this))) {
+                                cancelAiRequest();
+                                keyStore.updateGeminiModel(this, modelField.getText().toString());
+                                sessionTurns.clear();
+                                output.setText("Gemini-Modell geändert. Dein bestehender Schlüssel bleibt gespeichert. Bitte KI FRAGEN testen.");
+                                updateStatus();
+                                dialog.dismiss();
+                                return;
+                            }
+                        }
+                        if (newKey.isEmpty()) {
+                            field.setError("API-Schlüssel fehlt. Bestehendes Gemini-Modell kannst du ohne Neueingabe ändern.");
+                            return;
+                        }
+                        if (newKey.length() < 12 || newKey.length() > 1024) {
+                            field.setError("API-Schlüssel/Token hat eine ungültige Länge.");
+                            return;
+                        }
+                        if (JarvisSecretStore.HUGGING_FACE.equals(selectedProvider)) {
+                            if (!newKey.matches("hf_[A-Za-z0-9_-]{9,253}")) {
+                                field.setError("Hugging-Face-Token muss mit hf_ beginnen.");
+                                return;
+                            }
+                            try {
+                                JarvisHuggingFaceClient.normalizeModel(
+                                        modelField.getText().toString());
+                            } catch (IllegalArgumentException invalidModel) {
+                                modelField.setError("Modell-ID ungültig: Organisation/Modell.");
+                                return;
+                            }
+                        }
                         cancelAiRequest();
-                        keyStore.saveAndEnable(this, field.getText().toString(),
-                                selectedProvider, modelField.getText().toString());
+                        keyStore.saveAndEnable(this, newKey,
+                                selectedProvider, modelField.getText().toString(),
+                                modelField.getText().toString());
                         voiceAiConsent = false;
                         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                                 .putBoolean(VOICE_AI_PREF, false).apply();
@@ -596,8 +690,11 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                                 + "die Verbindung ist noch nicht auf deinem S24 getestet.");
                         updateStatus();
                         dialog.dismiss();
-                    } catch (GeneralSecurityException | IOException | IllegalArgumentException e) {
-                        output.setText("Schlüssel konnte nicht sicher gespeichert werden.");
+                    } catch (IllegalArgumentException invalidInput) {
+                        output.setText("Token oder Modellangabe ungültig. KI bleibt unverändert.");
+                    } catch (GeneralSecurityException | IOException secureStorageError) {
+                        output.setText("Verschlüsselte Speicherung fehlgeschlagen. "
+                                + "Bitte Android-Keystore und Gerätesperre prüfen.");
                     }
                 }));
         dialog.show();

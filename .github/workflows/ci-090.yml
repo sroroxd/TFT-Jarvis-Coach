@@ -1,9 +1,9 @@
 name: JARVIS 0.9 Android CI
 on:
   push:
-    branches: [ "feature/jarvis-090-perception", "feature/independent-jarvis-core-20261030", "feature/jarvis-0913-bargein-recovery-20261030", "feature/jarvis-0914-speech-recovery-20261030", "feature/huggingface-jarvis-provider-20261030" ]
+    branches: [ "feature/jarvis-090-perception", "feature/independent-jarvis-core-20261030", "feature/jarvis-0913-bargein-recovery-20261030", "feature/jarvis-0914-speech-recovery-20261030", "feature/huggingface-jarvis-provider-20261030", "fix/jarvis-0916-speech-throttle-s24-20261031", "fix/jarvis-0917-gemini-model-s24-20261031", "feature/jarvis-local-first-core-20261031" ]
   pull_request:
-    branches: [ "main", "feature/unified-jarvis-core-20261030", "feature/independent-jarvis-core-20261030", "feature/jarvis-0913-bargein-recovery-20261030", "feature/jarvis-0914-speech-recovery-20261030" ]
+    branches: [ "main", "feature/unified-jarvis-core-20261030", "feature/independent-jarvis-core-20261030", "feature/jarvis-0913-bargein-recovery-20261030", "feature/jarvis-0914-speech-recovery-20261030", "feature/huggingface-jarvis-provider-20261030", "fix/jarvis-0916-speech-throttle-s24-20261031", "fix/jarvis-0917-gemini-model-s24-20261031" ]
 permissions:
   contents: read
 jobs:
