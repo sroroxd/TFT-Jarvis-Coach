@@ -10,6 +10,11 @@
 namespace {
 std::mutex runtime_lock;
 std::atomic<bool> stop_requested{false};
+// Qwen2.5-Instruct uses ChatML control tokens (<|im_start|>/<|im_end|>).
+// If parse_special=false, those sequences become ordinary text and the
+// assistant role boundary is not represented correctly in the token stream.
+constexpr bool kParseSpecial = true;
+static_assert(kParseSpecial, "Qwen2.5-Instruct requires special ChatML token parsing");
 llama_model * model = nullptr;
 llama_context * ctx = nullptr;
 llama_sampler * sampler = nullptr;
@@ -67,11 +72,11 @@ Java_com_pete_tftjarvis_JarvisOfflineEngine_nativeGenerate(
     llama_memory_clear(llama_get_memory(ctx), true);
     llama_sampler_reset(sampler);
     const auto * vocab = llama_model_get_vocab(model);
-    const int n = llama_tokenize(vocab, prompt.c_str(), (int) prompt.size(), nullptr, 0, true, false);
+    const int n = llama_tokenize(vocab, prompt.c_str(), (int) prompt.size(), nullptr, 0, true, kParseSpecial);
     if (n >= 0 || -n > 1700 || -n <= 0) return env->NewStringUTF("");
     std::vector<llama_token> tokens((size_t) -n);
     if (llama_tokenize(vocab, prompt.c_str(), (int) prompt.size(),
-                      tokens.data(), (int) tokens.size(), true, false) < 0) {
+                      tokens.data(), (int) tokens.size(), true, kParseSpecial) < 0) {
         return env->NewStringUTF("");
     }
     int offset = 0;
