@@ -65,14 +65,22 @@ final class JarvisGgufModelStore {
     }
 
     static ImportedModel importVerified(InputStream source, File privateDirectory) throws IOException {
-        return importInternal(source, privateDirectory);
+        return importInternal(source, privateDirectory, null);
+    }
+
+    static ImportedModel importVerified(InputStream source, File privateDirectory,
+                                        String expectedSha256) throws IOException {
+        if (expectedSha256 == null || !expectedSha256.matches("[a-fA-F0-9]{64}"))
+            throw new IOException("Ungültiger SHA-256-Referenzwert.");
+        return importInternal(source, privateDirectory, expectedSha256.toLowerCase(java.util.Locale.ROOT));
     }
 
     static File importFrom(InputStream source, File privateDirectory) throws IOException {
-        return importInternal(source, privateDirectory).file;
+        return importInternal(source, privateDirectory, null).file;
     }
 
-    private static ImportedModel importInternal(InputStream source, File privateDirectory) throws IOException {
+    private static ImportedModel importInternal(InputStream source, File privateDirectory,
+                                                String expectedSha256) throws IOException {
         if (source == null) throw new IOException("Modell konnte nicht geöffnet werden.");
         if (privateDirectory == null || (!privateDirectory.isDirectory()
                 && !privateDirectory.mkdirs())) {
@@ -109,6 +117,10 @@ final class JarvisGgufModelStore {
             try (FileInputStream verify = new FileInputStream(partial)) {
                 inspect(verify);
             }
+            String sha256 = toHex(digest.digest());
+            if (expectedSha256 != null && !expectedSha256.equals(sha256)) {
+                throw new IOException("SHA-256-Prüfung fehlgeschlagen. Bestehendes Modell bleibt erhalten.");
+            }
             try {
                 Files.move(partial.toPath(), destination.toPath(),
                         StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -116,7 +128,7 @@ final class JarvisGgufModelStore {
                 throw new IOException("Keine sichere atomare Speicherung möglich.", e);
             }
             published = true;
-            return new ImportedModel(destination, toHex(digest.digest()), written);
+            return new ImportedModel(destination, sha256, written);
         } finally {
             if (!published && partial.exists()) partial.delete();
         }
