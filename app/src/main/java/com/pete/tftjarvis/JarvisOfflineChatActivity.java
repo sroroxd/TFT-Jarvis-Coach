@@ -25,6 +25,9 @@ import java.util.concurrent.Executors;
  */
 public final class JarvisOfflineChatActivity extends Activity {
     private static final int PICK_MODEL = 7001;
+    // Official Qwen Q4_K_M artifact, Apache-2.0, ~491 MB; verified metadata 2026-10-31.
+    private static final String VERIFIED_MODEL_SHA256 =
+            "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db";
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final List<String[]> turns = new ArrayList<>();
     private final File[] selected = new File[1];
@@ -53,7 +56,7 @@ public final class JarvisOfflineChatActivity extends Activity {
         status.setText("Nur lokale Inferenz. Keine Modell-Datei geladen.");
         root.addView(status);
         transcript = new TextView(this);
-        transcript.setText("Noch kein Gespräch. Wähle zuerst eine eigene, lizenzgeprüfte GGUF-Datei.");
+        transcript.setText("Noch kein Gespräch. Importiere ausschließlich die offizielle Qwen2.5-0.5B-Instruct Q4_K_M GGUF (~491 MB, Apache-2.0). SHA-256 wird vor dem Laden geprüft.");
         transcript.setTextIsSelectable(true);
         root.addView(transcript);
         input = new EditText(this);
@@ -112,6 +115,9 @@ public final class JarvisOfflineChatActivity extends Activity {
             try (InputStream stream = getContentResolver().openInputStream(uri)) {
                 JarvisGgufModelStore.ImportedModel result =
                         JarvisGgufModelStore.importVerified(stream, directory);
+                if (!VERIFIED_MODEL_SHA256.equalsIgnoreCase(result.sha256)) {
+                    throw new java.io.IOException("Modell-SHA256 nicht freigegeben; nur geprüfte Qwen-Q4_K_M-Testdatei verwenden.");
+                }
                 imported = result.file;
                 message = "Import: " + result.bytes + " Bytes, SHA-256 " + result.sha256
                         + ". Native Modellprüfung läuft …";
@@ -137,7 +143,7 @@ public final class JarvisOfflineChatActivity extends Activity {
                 ask.setEnabled(ready);
                 status.setText(ready
                         ? "LLM lokal geladen. Flugmodus-Test: Frage stellen und fünfmal nachfragen."
-                        : "Modell konnte nicht geladen werden. GGUF-Architektur, Quantisierung und RAM prüfen.");
+                        : "Modell nicht freigegeben oder nicht ladbar. Nutze die dokumentierte offizielle Qwen-Datei; Architektur, Quantisierung und RAM prüfen.");
             });
         });
     }
