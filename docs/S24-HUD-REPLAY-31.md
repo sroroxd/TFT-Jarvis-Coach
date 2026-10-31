@@ -28,6 +28,30 @@
 - Eine Phase nur dann als **tatsächlich erkannt** auswerten, wenn sie von einer unabhängigen Erkennung stammt. Der übergebene `lastPhase`-Wert ist **keine Vorhersage**. HP wird aktuell mangels verifizierter eigener HUD-Position nicht erkannt und muss als Ablehnung erfasst werden.
 - Werte des synthetischen Benchmarks und echte Screenshot-OCR-Messwerte streng getrennt berichten. Fehlender Frame, ältere Zwischenspeicherwerte, XP-Kaufpreis, HP/Timer-Verwechslung und Match-Reset als eigene Fehlerklassen erfassen.
 
+## Lokaler CSV-Auswerter (implementiert; kein OCR-Export)
+
+- Programm: `tools/hud_replay_report.py` (nur Python-Standardbibliothek); Tests: `tools/test_hud_replay_report.py` mit künstlichen In-Memory-Fällen. Es werden keine Bilder gelesen und keine Netzwerkverbindungen hergestellt.
+- Erwartete Vorhersagen: öffentliche, **leere** Schema-Vorlage `docs/s24-hud-predictions.template.csv` mit `case_id,stage,level,gold,hp,phase,phase_source`.
+- `phase_source` muss `INDEPENDENT`, `INJECTED` oder `NONE` sein. Bei `INJECTED` (z. B. `lastPhase` aus vorherigem Frame) wird die Phase **niemals** als Erkennung bewertet. Bei `NONE` muss die Phase leer sein. `INDEPENDENT` bezeichnet nur eine behauptete unabhängige Phase; Herkunft ist durch den Nutzer/Instrumentierung zu verifizieren.
+- Gleiche `case_id`-Menge in beiden lokalen CSV-Dateien ist erforderlich; fehlende oder doppelte Fälle werden abgelehnt. Fehlende Zustimmung/PII-Bereinigung und widersprüchliche Labels brechen die Auswertung ab; die Standardausgabe enthält **nur aggregierte Zähler**, keine IDs, Werte oder lokalen Dateipfade.
+- Die Zahlen in der Ausgabe stammen ausschließlich aus den übergebenen CSV-Dateien. Der Auswerter kann **nicht** prüfen, ob die Vorhersagen wirklich per ML-Kit aus demselben Screenshot stammen; er ist daher ausdrücklich **kein** vollständiger Bild-zu-OCR-Replay und kein eigenständiger Nachweis einer realen Erkennungsquote.
+
+Im Repository-Root lokal ausführen (nicht in GitHub Actions mit privaten Daten):
+
+```bash
+python3 -m unittest discover -s tools -p 'test_hud_replay_report.py' -v
+mkdir -p replay-private
+cp docs/s24-hud-labels.template.csv replay-private/labels.csv
+cp docs/s24-hud-predictions.template.csv replay-private/predictions.csv
+# Beide Dateien ausschließlich lokal mit echten, manuell bestätigten Fällen
+# und separat auf dem S24 Ultra ermittelten OCR-Ausgaben befüllen.
+python3 tools/hud_replay_report.py \
+  --labels replay-private/labels.csv \
+  --predictions replay-private/predictions.csv
+```
+
+**Noch zu implementieren:** Ein eigener **lokaler, debug-only** Instrumentierungs-/Replayschritt, der mit ausdrücklicher Zustimmung den echten ML-Kit-`observe()`-Pfad auf die gelabelten Bilder anwendet und die Spalten in `predictions.csv` ausfüllt, ohne Cloud-/GitHub-Upload. Bis dahin sind sämtliche realen OCR-/Gerätemetriken **unbekannt**.
+
 ## Abnahme und nächste Arbeit
 
 - Lokale, manuell gelabelte Testfälle mit belegter Einwilligung und bereinigten privaten Daten vorhanden; keinerlei öffentliche Screenshot-Datei.
