@@ -31,3 +31,9 @@ muss es vor der Inferenz selbst prüfen. Keine Modell-Downloads ohne
 Einwilligung; keine API-/Billing-Automatik.
 
 Technische Referenz: https://github.com/ggml-org/llama.cpp/tree/master/examples/llama.android
+
+## Import-Härtung (31.10.2026)
+Die Importlogik weist jetzt GGUF-Dateien unter 1 MiB zurück (einschließlich zuvor akzeptierter 24-Byte-Scheinmodelle), berechnet beim Import einen SHA-256-Fingerabdruck und gibt Dateigröße/Hash für spätere nachvollziehbare Modellidentifikation zurück. JUnit-Tests prüfen diese Fälle und dass fehlgeschlagene Importe bestehende Modelle erhalten. **Achtung:** Auch eine 1-MiB-Datei mit gültigem Header kann gefälscht sein. Der Import ist keine GGUF-Vollvalidierung und kein Lizenznachweis. Vor dem Freischalten der Nutzeroberfläche sind vollständige native Modellprüfung und reale Inferenz zwingend.
+
+### Runtime-Gate (noch offen)
+Eine installierbare arm64-v8a-Runtime mit reproduzierbar gepinntem llama.cpp-Quellstand, verifizierter Upstream-Lizenz, Android-NDK/CMake-Toolchain, überprüfter Modell-Lizenz und Modell-SHA-256 fehlt weiterhin. Ohne diese Komponenten darf weder die importierte Datei als lauffähiges LLM gelten noch eine neue Offline-KI-APK beworben werden. Nächster Integrationsschritt: isolierter JNI-Adapter mit nativer Token-Generierung, Modell-Laden/Entladen und Interrupt; anschließend CI-Build für arm64-v8a, Offline-Texttest und fünf Folgefragen auf S24 Ultra. Kein automatischer Modelldownload.
