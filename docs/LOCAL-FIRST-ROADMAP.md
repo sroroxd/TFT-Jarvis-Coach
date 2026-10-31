@@ -47,3 +47,22 @@ Eine installierbare arm64-v8a-Runtime mit reproduzierbar gepinntem llama.cpp-Que
 - CPU-only als nachvollziehbare Baseline: 4 Threads, 2048 Kontext, maximal 256 neue Tokens. Der native Code begrenzt Prompt und Kontext, akzeptiert Interrupt, entlädt Speicher. Der Chat nutzt vorläufig ein **einfaches rollenmarkiertes Promptformat**, noch nicht das modellnative Qwen-Chat-Template. Vor Freigabe auf das Qwen-Template umstellen und fünf echte Folgefragen samt deutschen Antworten dokumentieren.
 - **Risiken:** Ein Build kann wegen Toolchain, llama.cpp-API oder fehlendem Git-Zugang scheitern; native Modellladung kann auf dem S24 RAM/Thermik belasten. Keine automatische Wiederaufnahme nach Hintergrundwechsel. Offline-ASR/VAD, TTS-Unterbrechung, Geräteaktionen, Batteriemessung noch nicht umgesetzt.
 - Freigaberegel: erst CI/CodeQL erfolgreich, dann Debug-APK-Binärprüfung, dann expliziter S24-Flugmodus-Test mit sechs Fragen und fünf Kontext-Folgefragen; vorher nicht als funktionierende KI kennzeichnen, nicht mergen.
+
+
+## Nachtrag: Tokenisierung und Supply-Chain (31.10.2026)
+
+Ein reproduzierbarer Native-Build ist keine Bestätigung für die Qualität lokaler Antworten.
+In der JNI-Runtime wurden beide `llama_tokenize`-Aufrufe auf
+`parse_special=true` korrigiert, damit die vorhandenen Qwen2.5-ChatML-Tokens
+`<|im_start|>` und `<|im_end|>` als Steuerzeichen und nicht als gewöhnliche
+Zeichenfolgen verarbeitet werden. Ohne diese Korrektur kann das Modell den
+Gesprächsrollen und Antwortbeginn nicht zuverlässig folgen.
+
+Die native Build-Konfiguration erwartet nicht nur den Upstream-Tag `b6000`,
+sondern prüft das geklonte Git-HEAD gegen den konkreten Commit
+`4762ad7316dcdec20016ab5985fb46a27902204d`. Bei Abweichung stoppt der
+Build ohne Ausgabe einer APK.
+
+Abnahme unverändert: CI/JUnit/Lint/ARM64-Build allein testen **keine echte
+Modell-Generierung**. Für die Geräteabnahme sind die verifizierte Qwen-GGUF,
+Flugmodus, sechs echte Fragen mit fünf Folgefragen und Messungen nötig.
