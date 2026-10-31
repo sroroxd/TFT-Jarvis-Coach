@@ -10,8 +10,10 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 35
-        versionName '0.9.5-beta6'
+        ndk { abiFilters 'arm64-v8a' }
+        externalNativeBuild { cmake { cppFlags '-std=c++17' } }
+        versionCode 50
+        versionName '0.9.20-qwen-chatml-fix-experimental'
     }
 
     // Stable release signing is reused for every subsequent Android APK update.
@@ -30,8 +32,20 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Version-specific test package avoids CI debug-signature clashes with older previews.
+            applicationIdSuffix '.jarvislocaltokens'
+            versionNameSuffix '-preview'
+        }
         release {
             signingConfig signingConfigs.stableRelease
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.22.1'
         }
     }
 
@@ -43,6 +57,7 @@ android {
 
 
 dependencies {
+    implementation project(':jarvis-core')
     // Bundled on-device OCR: no network/model download required at runtime.
     implementation 'com.google.mlkit:text-recognition:16.0.1'
     testImplementation 'junit:junit:4.13.2'
