@@ -22,6 +22,8 @@
         android:theme="@style/Theme.TFTJarvis"
         android:usesCleartextTraffic="false">
 
+        <activity android:name=".JarvisOfflineChatActivity" android:exported="false" />
+
         <activity
             android:name=".JarvisActivity"
             android:exported="true">
