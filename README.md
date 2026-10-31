@@ -1,16 +1,19 @@
-# TFT JARVIS Coach
+# JARVIS – Android-Assistent (TFT optional/Legacy)
 
-Deutschsprachiger Android-Prototyp mit lokaler Bildschirmaufnahme, HUD-Erkennung,
-einem optionalen KI-Auswerter sowie einem schwebenden Bedienfeld.
+Das Hauptziel ist ein **eigenständiger, möglichst kostenloser persönlicher Android-Assistent** mit lokalen Funktionen und natürlicher deutscher Sprache. Die frühere TFT-Coach-Funktion ist eine separate, bislang nicht freigegebene Entwicklungsrichtung – **nicht** Voraussetzung für JARVIS.
 
-## APK und Updates
+## APK-Downloads und Releases
 
-**Veröffentlichte, direkt installierbare APKs:**
-https://github.com/sroroxd/TFT-Jarvis-Coach/releases
+| Quelle | Zweck | Wichtig |
+|---|---|---|
+| **[GitHub Releases](https://github.com/sroroxd/TFT-Jarvis-Coach/releases)** | Dauerhaft signierte APKs und eindeutig gekennzeichnete Beta-Vorversionen | Vorversionen sind keine Geräteabnahme |
+| **[GitHub Actions](https://github.com/sroroxd/TFT-Jarvis-Coach/actions)** | Automatische Test-Builds mit zeitlich begrenzten ZIP-Artefakten | Debug-Signaturen und App-IDs können abweichen |
+| **[Release-Notizen](docs/releases/0.9.21-beta7.md)** | Inhalt, Testschritte und Grenzen der aktuellen Beta | Kein Modell in der APK, kein verifizierter Live-Sprachchat |
+| **[Linkregister](docs/GITHUB-ACTIONS-ARTEFAKTE.md)** | Unterschied zwischen Actions-Runs, Artefakt-IDs, ZIP und direkter Release-APK | Kein erfundener Download-Link |
 
-**CI-Testdateien und fehlgeschlagene Downloads** sind getrennt erfasst:
-[GitHub Actions, Artefakte und Linkregister](docs/GITHUB-ACTIONS-ARTEFAKTE.md).
-Ein erfolgreicher APK-Build bedeutet nicht automatisch, dass ein GitHub Release verfügbar ist.
+**Aktuelle Entwicklung:** 0.9.20 (native lokale Text-KI als experimenteller Prototyp). Geplante signierte Testveröffentlichung: **0.9.21-beta7**, nach erfolgreicher GitHub-Release-CI. Modellgewichte werden nicht mitgeliefert; eine tatsächliche Offline-Generierung muss auf dem Galaxy S24 Ultra erst belegt werden.
+
+**Status des Freisprechens:** Die ältere Android-Sprachdiensterkennung kann auf dem S24 Ultra den Fehler **Android-Code 10** (zu viele Starts) auslösen. Der kontinuierliche Offline-Sprachkern und zuverlässige Unterbrechbarkeit sind noch nicht abgenommen. Keine Vollfunktionalität behaupten.
 
 Ab `v0.9.0-beta1` werden Release-APKs mit derselben dauerhaften Signatur
 veröffentlicht. `v0.9.3-beta4` erhöht den Android-`versionCode` auf 33.
