@@ -10,8 +10,8 @@ android {
         applicationId 'com.pete.tftjarvis'
         minSdk 29
         targetSdk 35
-        versionCode 46
-        versionName '0.9.16-speech-throttle-preview'
+        versionCode 47
+        versionName '0.9.17-gemini-model-preview'
     }
 
     // Stable release signing is reused for every subsequent Android APK update.
@@ -32,7 +32,7 @@ android {
     buildTypes {
         debug {
             // Version-specific test package avoids CI debug-signature clashes with older previews.
-            applicationIdSuffix '.jarvis0916'
+            applicationIdSuffix '.jarvis0917'
             versionNameSuffix '-preview'
         }
         release {
