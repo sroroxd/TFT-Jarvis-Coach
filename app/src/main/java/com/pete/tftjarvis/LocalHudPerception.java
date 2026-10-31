@@ -208,6 +208,9 @@ final class LocalHudPerception implements AutoCloseable {
 
             String normalized = normalizeStageToken(c.text);
             if (normalized == null) continue;
+            // Multiple plausible but contradictory stage readings are not evidence.
+            // A best-looking OCR candidate must not override an equally valid rival.
+            if (bestValue != null && !bestValue.equals(normalized)) return null;
 
             float score = c.heightNorm(height) * 100f
                     - Math.abs(x - 0.50f) * 16f
@@ -257,6 +260,9 @@ final class LocalHudPerception implements AutoCloseable {
 
             Integer value = parseNumericToken(c.text, min, max);
             if (value == null) continue;
+            // If overlapping HUD tokens disagree, abstain rather than pick the
+            // highest OCR/position score and report a speculative number.
+            if (bestValue != null && !bestValue.equals(value)) return null;
 
             float distance = Math.abs(x - region.expectedX) + Math.abs(y - region.expectedY);
             float score = c.heightNorm(height) * 120f - distance * 18f;
