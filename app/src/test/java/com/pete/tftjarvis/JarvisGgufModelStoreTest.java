@@ -83,4 +83,20 @@ public class JarvisGgufModelStoreTest {
             assertFalse(new File(root, "local-model.gguf.partial").exists());
         }
     }
+    @Test public void mismatchedChecksumPreservesPreviouslyImportedModel() throws Exception {
+        File root = tmp.newFolder();
+        byte[] original = model();
+        JarvisGgufModelStore.ImportedModel first = JarvisGgufModelStore.importVerified(
+                new ByteArrayInputStream(original), root);
+        try {
+            JarvisGgufModelStore.importVerified(new ByteArrayInputStream(original), root,
+                    "0000000000000000000000000000000000000000000000000000000000000000");
+            fail("Incorrect expected checksum must reject before publishing.");
+        } catch (IOException expected) {
+            assertEquals(first.bytes, new File(root, "local-model.gguf").length());
+            assertTrue(JarvisGgufModelStore.isImported(root));
+            assertFalse(new File(root, "local-model.gguf.partial").exists());
+        }
+    }
+
 }
