@@ -26,7 +26,7 @@ final class JarvisSpeechInput {
         void onSpeechState(String state);
         void onRecognizedText(String text);
         void onPartialText(String text);
-        void onSpeechError(String description);
+        void onSpeechError(int errorCode, String description);
     }
 
     private final Activity activity;
@@ -50,7 +50,7 @@ final class JarvisSpeechInput {
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S
                 || !SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) {
-            callbacks.onSpeechError("Lokale Spracherkennung ist auf diesem Gerät nicht verfügbar. Texteingabe funktioniert weiterhin.");
+            callbacks.onSpeechError(JarvisSpeechRecovery.ON_DEVICE_UNAVAILABLE, "Lokale Spracherkennung ist auf diesem Gerät nicht verfügbar.");
             return;
         }
         if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO)
@@ -86,7 +86,7 @@ final class JarvisSpeechInput {
                 @Override public void onError(int error) {
                     if (!isCurrent()) return;
                     release();
-                    callbacks.onSpeechError(describeError(error));
+                    callbacks.onSpeechError(error, describeError(error));
                 }
 
                 @Override public void onResults(Bundle results) {
@@ -98,7 +98,7 @@ final class JarvisSpeechInput {
                             ? "" : matches.get(0).trim();
                     release();
                     if (recognized.isEmpty()) {
-                        callbacks.onSpeechError("Keine Sprache erkannt. Bitte erneut versuchen.");
+                        callbacks.onSpeechError(JarvisSpeechRecovery.NO_MATCH, "Keine Sprache erkannt.");
                     } else {
                         callbacks.onRecognizedText(recognized);
                     }
@@ -126,7 +126,7 @@ final class JarvisSpeechInput {
             callbacks.onSpeechState("MIKROFON AKTIV");
         } catch (RuntimeException e) {
             release();
-            callbacks.onSpeechError("Lokale Spracheingabe konnte nicht gestartet werden. Texteingabe bleibt verfügbar.");
+            callbacks.onSpeechError(JarvisSpeechRecovery.START_FAILED, "Lokale Spracheingabe konnte nicht gestartet werden.");
         }
     }
 
@@ -137,7 +137,7 @@ final class JarvisSpeechInput {
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             startOrCancel();
         } else {
-            callbacks.onSpeechError("Mikrofonzugriff nicht erlaubt. Texteingabe bleibt verfügbar.");
+            callbacks.onSpeechError(JarvisSpeechRecovery.PERMISSION_DENIED, "Mikrofonzugriff nicht erlaubt.");
         }
     }
 
