@@ -54,4 +54,24 @@ public class JarvisGeminiClientTest {
             assertTrue(expected.getMessage().contains("4000"));
         }
     }
+
+    @Test public void validatesGeminiModelNames() {
+        assertEquals("gemini-2.5-flash", JarvisGeminiClient.normalizeModel("models/gemini-2.5-flash"));
+        for (String invalid : new String[] {"", "models/", "../gemini-foo", "gemini-abc/other", "https://evil.test"}) {
+            try {
+                JarvisGeminiClient.normalizeModel(invalid);
+                fail("Invalid model accepted: " + invalid);
+            } catch (IllegalArgumentException expected) { }
+        }
+    }
+
+    @Test public void filtersModelsWithoutGenerateContent() throws Exception {
+        String response = "{\\\"models\\\":["
+                + "{\\\"name\\\":\\\"models/gemini-2.5-flash\\\",\\\"supportedGenerationMethods\\\":[\\\"generateContent\\\"]},"
+                + "{\\\"name\\\":\\\"models/embedding-001\\\",\\\"supportedGenerationMethods\\\":[\\\"embedContent\\\"]},"
+                + "{\\\"name\\\":\\\"models/gemini-2.5-flash-lite\\\",\\\"supportedGenerationMethods\\\":[\\\"generateContent\\\"]},"
+                + "{\\\"name\\\":\\\"models/gemini-not-text\\\",\\\"supportedGenerationMethods\\\":[\\\"countTokens\\\"]}]}";
+        assertEquals("gemini-2.5-flash, gemini-2.5-flash-lite",
+                JarvisGeminiClient.supportedModels(response));
+    }
 }
