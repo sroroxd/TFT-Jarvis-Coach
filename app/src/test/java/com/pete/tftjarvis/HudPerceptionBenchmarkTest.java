@@ -5,17 +5,17 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 import static org.junit.Assert.*;
 
 /**
  * Offline HUD Perception Benchmark.
  *
- * Evaluates LocalHudPerception and HudRegions against a suite of offline test fixtures
- * representing various TFT game screens, noisy OCR candidate variations, and non-game
- * screens (Lobby, Result).
- *
- * Measures quantitative metrics: Precision, Recall, F1-Score, and False Positive Rate.
+ * Synthetic OCR candidates only: NO screenshots, OCR engine, actual match or device involved.
+ * Fixture authors provide labels explicitly; injected lastPhase is NOT a phase prediction.
+ * Reports per-case verdicts and metrics with denominators. These metrics must never be
+ * presented as real-world HUD accuracy or proof of HP/phase recognition.
  */
 public class HudPerceptionBenchmarkTest {
 
@@ -26,16 +26,24 @@ public class HudPerceptionBenchmarkTest {
         final String expectedStage;
         final Integer expectedLevel;
         final Integer expectedGold;
+        final Integer expectedHealth;
         final boolean isGameScreen;
 
         Fixture(String name, String lastPhase, List<LocalHudPerception.Candidate> candidates,
                 String expectedStage, Integer expectedLevel, Integer expectedGold, boolean isGameScreen) {
+            this(name, lastPhase, candidates, expectedStage, expectedLevel, expectedGold, null, isGameScreen);
+        }
+
+        Fixture(String name, String lastPhase, List<LocalHudPerception.Candidate> candidates,
+                String expectedStage, Integer expectedLevel, Integer expectedGold,
+                Integer expectedHealth, boolean isGameScreen) {
             this.name = name;
             this.lastPhase = lastPhase;
             this.candidates = candidates;
             this.expectedStage = expectedStage;
             this.expectedLevel = expectedLevel;
             this.expectedGold = expectedGold;
+            this.expectedHealth = expectedHealth;
             this.isGameScreen = isGameScreen;
         }
     }
@@ -45,20 +53,70 @@ public class HudPerceptionBenchmarkTest {
         int fp = 0;
         int fn = 0;
         int tn = 0;
+        int correct = 0;
+        int wrong = 0;
+        int rejected = 0;
+
+        void record(String fixture, String field, Object truth, Object actual) {
+            String outcome;
+            if (truth == null) {
+                if (actual == null) {
+                    tn++;
+                    rejected++;
+                    outcome = "ABGELEHNT_KORREKT";
+                } else {
+                    fp++;
+                    wrong++;
+                    outcome = "FALSCH_FALSE_POSITIVE";
+                }
+            } else if (actual == null) {
+                fn++;
+                rejected++;
+                outcome = "ABGELEHNT_TROTZ_LABEL";
+            } else if (truth.equals(actual)) {
+                tp++;
+                correct++;
+                outcome = "KORREKT";
+            } else {
+                fp++;
+                fn++;  // Wrong non-null prediction both invents a value and misses the true one.
+                wrong++;
+                outcome = "FALSCH_FP_UND_FN";
+            }
+            System.out.println("CASE=" + fixture + " FIELD=" + field
+                    + " TRUTH=" + (truth == null ? "UNLESBAR/FEHLT" : truth)
+                    + " EXPECT_REJECTION=" + (truth == null)
+                    + " ACTUAL=" + (actual == null ? "ABGELEHNT" : actual)
+                    + " RESULT=" + outcome);
+        }
 
         double precision() {
-            return (tp + fp) == 0 ? 1.0 : (double) tp / (tp + fp);
+            return (tp + fp) == 0 ? Double.NaN : (double) tp / (tp + fp);
         }
 
         double recall() {
-            return (tp + fn) == 0 ? 1.0 : (double) tp / (tp + fn);
+            return (tp + fn) == 0 ? Double.NaN : (double) tp / (tp + fn);
         }
 
         double f1() {
             double p = precision();
             double r = recall();
-            return (p + r) == 0.0 ? 0.0 : 2.0 * p * r / (p + r);
+            return Double.isNaN(p) || Double.isNaN(r)
+                    ? Double.NaN : (p + r) == 0.0 ? 0.0 : 2.0 * p * r / (p + r);
         }
+
+        String summary() {
+            return String.format(Locale.ROOT,
+                    "Precision=%s (%d/%d), Recall=%s (%d/%d), F1=%s; "
+                    + "korrekt=%d, falsch=%d, abgelehnt=%d (TP=%d, FP=%d, FN=%d, TN=%d)",
+                    percent(precision()), tp, tp + fp,
+                    percent(recall()), tp, tp + fn,
+                    percent(f1()), correct, wrong, rejected, tp, fp, fn, tn);
+        }
+    }
+
+    private static String percent(double value) {
+        return Double.isNaN(value) ? "N/A" : String.format(Locale.ROOT, "%.2f", value);
     }
 
     @Test
@@ -69,6 +127,7 @@ public class HudPerceptionBenchmarkTest {
         FieldMetrics stageMetrics = new FieldMetrics();
         FieldMetrics levelMetrics = new FieldMetrics();
         FieldMetrics goldMetrics = new FieldMetrics();
+        FieldMetrics healthMetrics = new FieldMetrics();
 
         int nonGameFalsePositives = 0;
         int nonGameFixtures = 0;
@@ -82,38 +141,17 @@ public class HudPerceptionBenchmarkTest {
             obs = LocalHudPerception.gateForPhase(obs, f.lastPhase);
             assertNull("HP is unsupported without a verified own-player anchor: " + f.name, obs.health);
 
-            // Stage evaluation
-            String predStage = obs.stage != null ? obs.stage.value : null;
-            if (f.expectedStage != null) {
-                if (f.expectedStage.equals(predStage)) stageMetrics.tp++;
-                else if (predStage != null) { stageMetrics.fp++; stageMetrics.fn++; }
-                else stageMetrics.fn++;
-            } else {
-                if (predStage != null) stageMetrics.fp++;
-                else stageMetrics.tn++;
-            }
-
-            // Level evaluation
-            Integer predLevel = obs.level != null ? obs.level.value : null;
-            if (f.expectedLevel != null) {
-                if (f.expectedLevel.equals(predLevel)) levelMetrics.tp++;
-                else if (predLevel != null) { levelMetrics.fp++; levelMetrics.fn++; }
-                else levelMetrics.fn++;
-            } else {
-                if (predLevel != null) levelMetrics.fp++;
-                else levelMetrics.tn++;
-            }
-
-            // Gold evaluation
-            Integer predGold = obs.gold != null ? obs.gold.value : null;
-            if (f.expectedGold != null) {
-                if (f.expectedGold.equals(predGold)) goldMetrics.tp++;
-                else if (predGold != null) { goldMetrics.fp++; goldMetrics.fn++; }
-                else goldMetrics.fn++;
-            } else {
-                if (predGold != null) goldMetrics.fp++;
-                else goldMetrics.tn++;
-            }
+            // Phase is an injected previous state, not inferred by the local parser.
+            System.out.println("CASE=" + f.name + " FIELD=PHASE TRUTH=" + f.lastPhase
+                    + " INPUT=VORHERIGE_PHASE; ACTUAL=NICHT_GEMESSEN; RESULT=NICHT_BESTIMMBAR");
+            stageMetrics.record(f.name, "STAGE", f.expectedStage,
+                    obs.stage == null ? null : obs.stage.value);
+            levelMetrics.record(f.name, "LEVEL", f.expectedLevel,
+                    obs.level == null ? null : obs.level.value);
+            goldMetrics.record(f.name, "GOLD", f.expectedGold,
+                    obs.gold == null ? null : obs.gold.value);
+            healthMetrics.record(f.name, "HP", f.expectedHealth,
+                    obs.health == null ? null : obs.health.value);
 
             if (!f.isGameScreen) {
                 nonGameFixtures++;
@@ -135,21 +173,19 @@ public class HudPerceptionBenchmarkTest {
 
         System.out.println("=== SYNTHETIC OCR-CANDIDATE TESTS ONLY; NO REAL DEVICE ACCURACY ===");
         System.out.println("HP: not measured (own-player anchor not validated).");
-        System.out.println("Phase: not independently inferred by this local OCR benchmark.");
+        System.out.println("Phase: previous state passed as INPUT only; NOT inferred or scored.");
         System.out.println("=== OFFLINE HUD PERCEPTION BENCHMARK RESULTS ===");
         System.out.println(String.format("Total Fixtures: %d (Game: %d, Non-Game: %d)",
                 suite.size(), suite.size() - nonGameFixtures, nonGameFixtures));
-        System.out.println(String.format("STAGE: Precision=%.2f, Recall=%.2f, F1=%.2f (TP=%d, FP=%d, FN=%d, TN=%d)",
-                stageP, stageR, stageMetrics.f1(), stageMetrics.tp, stageMetrics.fp, stageMetrics.fn, stageMetrics.tn));
-        System.out.println(String.format("LEVEL: Precision=%.2f, Recall=%.2f, F1=%.2f (TP=%d, FP=%d, FN=%d, TN=%d)",
-                levelP, levelR, levelMetrics.f1(), levelMetrics.tp, levelMetrics.fp, levelMetrics.fn, levelMetrics.tn));
-        System.out.println(String.format("GOLD:  Precision=%.2f, Recall=%.2f, F1=%.2f (TP=%d, FP=%d, FN=%d, TN=%d)",
-                goldP, goldR, goldMetrics.f1(), goldMetrics.tp, goldMetrics.fp, goldMetrics.fn, goldMetrics.tn));
+        System.out.println("STAGE: " + stageMetrics.summary());
+        System.out.println("LEVEL: " + levelMetrics.summary());
+        System.out.println("GOLD:  " + goldMetrics.summary());
+        System.out.println("HP:    " + healthMetrics.summary());
         System.out.println(String.format("Non-Game False Positive Rate: %.2f (%d/%d)",
                 fpRateNonGame, nonGameFalsePositives, nonGameFixtures));
         System.out.println("=================================================");
 
-        // Assertions for high accuracy, precision, recall and zero false positives on non-game screens
+        // Structural assertions on AUTHOR-LABELLED SYNTHETIC cases ONLY, not field accuracy in a live game.
         assertTrue("Stage Precision must be >= 0.95", stageP >= 0.95);
         assertTrue("Stage Recall must be >= 0.90", stageR >= 0.90);
         assertTrue("Level Precision must be >= 0.95", levelP >= 0.95);
@@ -157,6 +193,10 @@ public class HudPerceptionBenchmarkTest {
         assertTrue("Gold Precision must be >= 0.95", goldP >= 0.95);
         assertTrue("Gold Recall must be >= 0.90", goldR >= 0.90);
         assertEquals("False Positive Rate on non-game screens must be 0.0", 0.0, fpRateNonGame, 0.001);
+        assertEquals("No synthetic HP predictions before verified location", 0, healthMetrics.fp);
+        assertEquals("Known synthetic HP label must count as rejected, not recognised", 1, healthMetrics.fn);
+        assertEquals("HP precision undefined without positive predictions", true,
+                Double.isNaN(healthMetrics.precision()));
     }
 
     @Test public void rejectsAmbiguousHudTokensInsteadOfInventingValues() {
@@ -181,6 +221,23 @@ public class HudPerceptionBenchmarkTest {
         metrics.fn++;
         assertEquals(0.0, metrics.precision(), 0.0001);
         assertEquals(0.0, metrics.recall(), 0.0001);
+    }
+
+    @Test public void conflictingHudReadingsMustAbstainEvenAtDifferentScores() {
+        LocalHudPerception perception = new LocalHudPerception();
+        LocalHudPerception.Observation obs = perception.parseCandidates(Arrays.asList(
+                new LocalHudPerception.Candidate("3-2", 0.50f, 0.08f, 0.05f),
+                new LocalHudPerception.Candidate("4-1", 0.51f, 0.08f, 0.03f),
+                new LocalHudPerception.Candidate("5", 0.080f, 0.942f, 0.05f),
+                new LocalHudPerception.Candidate("6", 0.085f, 0.942f, 0.03f),
+                new LocalHudPerception.Candidate("20", 0.961f, 0.901f, 0.05f),
+                new LocalHudPerception.Candidate("30", 0.970f, 0.901f, 0.03f)
+        ), 1536, 709, 1L);
+        assertNull("Contradictory stages cannot be trusted", obs.stage);
+        assertNull("Contradictory levels cannot be trusted", obs.level);
+        assertNull("Contradictory gold totals cannot be trusted", obs.gold);
+        assertNull("Unverified own-player HP anchor", obs.health);
+        perception.close();
     }
 
     private static List<Fixture> buildBenchmarkSuite() {
@@ -255,6 +312,26 @@ public class HudPerceptionBenchmarkTest {
                 new LocalHudPerception.Candidate("13-2", 0.50f, 0.08f, 0.04f),
                 new LocalHudPerception.Candidate("XP 4", 0.080f, 0.942f, 0.05f)
         ), null, null, null, false));
+        // Explicit labelled HP: a value visible in a synthetic candidate is deliberately
+        // NOT treated as our HP until a real own-player anchor has been verified.
+        suite.add(new Fixture("HP fixture with known synthetic value", "PLANUNG", Arrays.asList(
+                new LocalHudPerception.Candidate("3-3", 0.50f, 0.08f, 0.04f),
+                new LocalHudPerception.Candidate("6", 0.080f, 0.942f, 0.05f),
+                new LocalHudPerception.Candidate("40", 0.961f, 0.901f, 0.05f),
+                new LocalHudPerception.Candidate("80", 0.70f, 0.65f, 0.05f)
+        ), "3-3", 6, 40, 80, true));
+
+        // Two conflicting plausible values for each field must be rejected;
+        // labelling these fields as unreadable is an explicit author decision.
+        suite.add(new Fixture("Ambiguous overlapping HUD readings", "PLANUNG", Arrays.asList(
+                new LocalHudPerception.Candidate("3-2", 0.50f, 0.08f, 0.05f),
+                new LocalHudPerception.Candidate("4-1", 0.51f, 0.08f, 0.03f),
+                new LocalHudPerception.Candidate("5", 0.080f, 0.942f, 0.05f),
+                new LocalHudPerception.Candidate("6", 0.085f, 0.942f, 0.03f),
+                new LocalHudPerception.Candidate("20", 0.961f, 0.901f, 0.05f),
+                new LocalHudPerception.Candidate("30", 0.970f, 0.901f, 0.03f)
+        ), null, null, null, true));
+
         return suite;
     }
 }
