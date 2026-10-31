@@ -86,6 +86,17 @@ jobs:
             exit 1
           fi
           "$APKSIGNER" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/apk-verification.txt"
+          # Verify actual APK identity, not just Gradle source declarations.
+          AAPT=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name aapt | sort -V | tail -n 1)
+          test -n "$AAPT"
+          "$AAPT" dump badging "$APK" > "$RUNNER_TEMP/release-badging.txt"
+          grep -q "^package: name='com.pete.tftjarvis' versionCode='$CODE' versionName='$VERSION'" "$RUNNER_TEMP/release-badging.txt"
+          grep -q "launchable-activity: name='com.pete.tftjarvis.JarvisActivity'" "$RUNNER_TEMP/release-badging.txt"
+          if grep -q '^application-debuggable' "$RUNNER_TEMP/release-badging.txt"; then
+            echo "::error::Release APK unexpectedly debuggable."
+            exit 1
+          fi
+
           # Fingerprints are public certificate identifiers, not the signing key.
           # Parse the exact signer digest from apksigner; never mask a real mismatch.
           # Current Android SDK apksigner labels the verified v2 certificate as
@@ -131,7 +142,12 @@ jobs:
           cp "$APK" "JARVIS-$VERSION.apk"
           extra=()
           if [[ "$VERSION" == *-* ]]; then extra+=(--prerelease); fi
+          NOTES="docs/releases/$VERSION.md"
+          if [ -s "$NOTES" ]; then
+            note_args=(--notes-file "$NOTES")
+          else
+            note_args=(--notes "Signed Android APK; device QA not guaranteed. For a pre-release, treat all AI and audio functions as experimental. Updates require matching signature and higher versionCode.")
+          fi
           gh release create "$TAG" "JARVIS-$VERSION.apk" \
             --target "$GITHUB_SHA" --title "JARVIS $VERSION" \
-            --notes "Directly installable signed Android APK. Updates require same signature and higher versionCode. Do not replace working installs until device QA." \
-            "${extra[@]}"
+            "${note_args[@]}" "${extra[@]}"
