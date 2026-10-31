@@ -66,11 +66,11 @@ public class JarvisGeminiClientTest {
     }
 
     @Test public void filtersModelsWithoutGenerateContent() throws Exception {
-        String response = "{\\\"models\\\":["
-                + "{\\\"name\\\":\\\"models/gemini-2.5-flash\\\",\\\"supportedGenerationMethods\\\":[\\\"generateContent\\\"]},"
-                + "{\\\"name\\\":\\\"models/embedding-001\\\",\\\"supportedGenerationMethods\\\":[\\\"embedContent\\\"]},"
-                + "{\\\"name\\\":\\\"models/gemini-2.5-flash-lite\\\",\\\"supportedGenerationMethods\\\":[\\\"generateContent\\\"]},"
-                + "{\\\"name\\\":\\\"models/gemini-not-text\\\",\\\"supportedGenerationMethods\\\":[\\\"countTokens\\\"]}]}";
+        String response = "{\"models\":["
+                + "{\"name\":\"models/gemini-2.5-flash\",\"supportedGenerationMethods\":[\"generateContent\"]},"
+                + "{\"name\":\"models/embedding-001\",\"supportedGenerationMethods\":[\"embedContent\"]},"
+                + "{\"name\":\"models/gemini-2.5-flash-lite\",\"supportedGenerationMethods\":[\"generateContent\"]},"
+                + "{\"name\":\"models/gemini-not-text\",\"supportedGenerationMethods\":[\"countTokens\"]}]}";
         assertEquals("gemini-2.5-flash, gemini-2.5-flash-lite",
                 JarvisGeminiClient.supportedModels(response));
     }
