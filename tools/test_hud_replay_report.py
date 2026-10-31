@@ -1,6 +1,11 @@
 """Deterministic synthetic checks for the offline CSV scorer; no real data."""
 import unittest
-from hud_replay_report import Metrics, evaluate
+import csv
+import io
+import tempfile
+from contextlib import redirect_stdout
+from pathlib import Path
+from hud_replay_report import Metrics, evaluate, read_rows, main, LABEL_COLUMNS, PRED_COLUMNS
 
 
 FIELDS = ("phase", "stage", "level", "gold", "hp")
@@ -67,6 +72,41 @@ class HudReplayMetricsTest(unittest.TestCase):
         self.assertIsNone(phase)
         self.assertEqual(n, 0)
         self.assertEqual(scores["gold"].tn, 1)
+
+
+    def test_duplicate_case_ids_in_csv_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "labels.csv"
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                columns = sorted(LABEL_COLUMNS)
+                writer = csv.DictWriter(handle, fieldnames=columns)
+                writer.writeheader()
+                row = {"case_id": "A", **labelled()}
+                writer.writerow(row)
+                writer.writerow(row)
+            with self.assertRaises(ValueError):
+                read_rows(path, LABEL_COLUMNS)
+
+    def test_cli_csv_end_to_end_uses_aggregate_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            labels_path = Path(directory) / "labels.csv"
+            predictions_path = Path(directory) / "predictions.csv"
+            with labels_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=sorted(LABEL_COLUMNS))
+                writer.writeheader()
+                writer.writerow({"case_id": "SYNTHETIC-PRIVATE-CASE", **labelled(stage="3-2")})
+            with predictions_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=sorted(PRED_COLUMNS))
+                writer.writeheader()
+                writer.writerow({"case_id": "SYNTHETIC-PRIVATE-CASE", **predicted(stage="3-2")})
+            capture = io.StringIO()
+            with redirect_stdout(capture):
+                status = main(["--labels", str(labels_path), "--predictions", str(predictions_path)])
+            self.assertEqual(status, 0)
+            self.assertIn("STAGE: correct=1", capture.getvalue())
+            self.assertIn("PHASE: N/A", capture.getvalue())
+            self.assertNotIn("SYNTHETIC-PRIVATE-CASE", capture.getvalue())
+            self.assertNotIn(str(directory), capture.getvalue())
 
 
 if __name__ == "__main__":
