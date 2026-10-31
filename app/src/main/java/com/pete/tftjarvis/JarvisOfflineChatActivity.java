@@ -69,7 +69,8 @@ public final class JarvisOfflineChatActivity extends Activity {
         pick.setOnClickListener(v -> {
             if (busy) return;
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.setType("application/octet-stream");
+            // GGUF often has no registered Android MIME type. Verify bytes and checksum after selection.
+            intent.setType("*/*");
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivityForResult(intent, PICK_MODEL);
