@@ -19,6 +19,22 @@ FetchContent_Declare(llama_cpp
     GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(llama_cpp)
 
+# A tag is not immutable. Refuse to compile an unexpected upstream revision.
+# Exact GitHub commit behind upstream release tag b6000 (verified 2026-10-31).
+set(JARVIS_LLAMA_EXPECTED_SHA "4762ad7316dcdec20016ab5985fb46a27902204d")
+execute_process(
+    COMMAND git -C "${llama_cpp_SOURCE_DIR}" rev-parse HEAD
+    OUTPUT_VARIABLE JARVIS_LLAMA_ACTUAL_SHA
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE JARVIS_LLAMA_GIT_RESULT
+    ERROR_QUIET)
+if(NOT JARVIS_LLAMA_GIT_RESULT EQUAL 0 OR
+   NOT JARVIS_LLAMA_ACTUAL_SHA STREQUAL JARVIS_LLAMA_EXPECTED_SHA)
+    message(FATAL_ERROR
+        "llama.cpp revision mismatch: expected ${JARVIS_LLAMA_EXPECTED_SHA}, "
+        "actual ${JARVIS_LLAMA_ACTUAL_SHA}. Build aborted.")
+endif()
+
 add_library(jarvis_offline SHARED jarvis_offline.cpp)
 target_compile_features(jarvis_offline PRIVATE cxx_std_17)
 target_link_libraries(jarvis_offline PRIVATE llama android log)
