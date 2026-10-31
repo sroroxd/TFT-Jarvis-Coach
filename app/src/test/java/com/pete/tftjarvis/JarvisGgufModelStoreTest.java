@@ -18,6 +18,12 @@ public class JarvisGgufModelStoreTest {
                 .put(new byte[]{'G','G','U','F'})
                 .putInt(version).putLong(tensors).putLong(metadata).array();
     }
+    private static byte[] model() {
+        byte[] payload = new byte[(int) JarvisGgufModelStore.MIN_MODEL_BYTES + 64];
+        byte[] header = gguf(3, 10, 20);
+        System.arraycopy(header, 0, payload, 0, header.length);
+        return payload;
+    }
     @Test public void parsesGGUFHeader() throws Exception {
         JarvisGgufModelStore.Header h = JarvisGgufModelStore.inspect(
                 new ByteArrayInputStream(gguf(3, 432, 28)));
@@ -41,10 +47,28 @@ public class JarvisGgufModelStoreTest {
     @Test public void importsIntoPrivateFolder() throws Exception {
         File root = tmp.newFolder();
         File file = JarvisGgufModelStore.importFrom(
-                new ByteArrayInputStream(gguf(3, 10, 20)), root);
+                new ByteArrayInputStream(model()), root);
         assertEquals("local-model.gguf", file.getName());
         assertTrue(JarvisGgufModelStore.isImported(root));
         assertFalse(new File(root, "local-model.gguf.partial").exists());
+    }
+    @Test public void rejectsHeaderOnlyFakeModel() throws Exception {
+        File root = tmp.newFolder();
+        try {
+            JarvisGgufModelStore.importFrom(new ByteArrayInputStream(gguf(3, 10, 20)), root);
+            fail("Header-only fake GGUF must not be imported.");
+        } catch (IOException expected) {
+            assertFalse(JarvisGgufModelStore.isImported(root));
+        }
+    }
+    @Test public void returnsStableChecksumAndSize() throws Exception {
+        byte[] payload = model();
+        JarvisGgufModelStore.ImportedModel imported = JarvisGgufModelStore.importVerified(
+                new ByteArrayInputStream(payload), tmp.newFolder());
+        assertEquals(payload.length, imported.bytes);
+        assertEquals(64, imported.sha256.length());
+        assertTrue(imported.sha256.matches("[0-9a-f]{64}"));
+        assertEquals(payload.length, imported.file.length());
     }
     @Test public void badImportDoesNotReplaceOldModel() throws Exception {
         File root = tmp.newFolder();
