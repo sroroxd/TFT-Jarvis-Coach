@@ -69,7 +69,8 @@ public final class JarvisOfflineChatActivity extends Activity {
         pick.setOnClickListener(v -> {
             if (busy) return;
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.setType("application/octet-stream");
+            // GGUF often has no registered Android MIME type. Verify bytes and checksum after selection.
+            intent.setType("*/*");
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivityForResult(intent, PICK_MODEL);
@@ -110,11 +111,14 @@ public final class JarvisOfflineChatActivity extends Activity {
         status.setText("Lokales Modell wird importiert und geprüft …");
         final int request = ++generation;
         worker.execute(() -> {
+            // Release the previous native model before a new potentially large import.
+            JarvisOfflineEngine.unload();
             String message;
             File imported = null;
             try (InputStream stream = getContentResolver().openInputStream(uri)) {
                 JarvisGgufModelStore.ImportedModel result =
-                        JarvisGgufModelStore.importVerified(stream, directory, VERIFIED_MODEL_SHA256);
+                        JarvisGgufModelStore.importVerified(
+                                stream, directory, VERIFIED_MODEL_SHA256, () -> canceled);
                 imported = result.file;
                 message = "Import: " + result.bytes + " Bytes, SHA-256 " + result.sha256
                         + ". Native Modellprüfung läuft …";
@@ -131,6 +135,8 @@ public final class JarvisOfflineChatActivity extends Activity {
                 try { loaded = JarvisOfflineEngine.load(candidate); }
                 catch (RuntimeException | LinkageError ignored) { }
             }
+            // Cancellation can happen during native loading as well as file import.
+            if (loaded && canceled) JarvisOfflineEngine.unload();
             final boolean ready = loaded && !canceled;
             runOnUiThread(() -> {
                 if (isDestroyed() || request != generation) return;
@@ -140,7 +146,11 @@ public final class JarvisOfflineChatActivity extends Activity {
                 ask.setEnabled(ready);
                 status.setText(ready
                         ? "LLM lokal geladen. Flugmodus-Test: Frage stellen und fünfmal nachfragen."
-                        : "Modell nicht freigegeben oder nicht ladbar. Nutze die dokumentierte offizielle Qwen-Datei; Architektur, Quantisierung und RAM prüfen.");
+                        : canceled
+                            ? "Modellimport abgebrochen. Vorheriges Modell bleibt auf dem Gerät erhalten."
+                            : candidate == null
+                                ? importMessage
+                                : "Modell nicht ladbar. Architektur, Quantisierung und RAM prüfen.");
             });
         });
     }

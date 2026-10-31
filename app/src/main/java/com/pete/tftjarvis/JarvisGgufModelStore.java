@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.function.BooleanSupplier;
 
 /** Validates and atomically imports GGUF into private app storage. NOT an inference engine. */
 final class JarvisGgufModelStore {
@@ -65,22 +66,35 @@ final class JarvisGgufModelStore {
     }
 
     static ImportedModel importVerified(InputStream source, File privateDirectory) throws IOException {
-        return importInternal(source, privateDirectory, null);
+        return importInternal(source, privateDirectory, null, () -> false);
     }
 
     static ImportedModel importVerified(InputStream source, File privateDirectory,
                                         String expectedSha256) throws IOException {
         if (expectedSha256 == null || !expectedSha256.matches("[a-fA-F0-9]{64}"))
             throw new IOException("Ungültiger SHA-256-Referenzwert.");
-        return importInternal(source, privateDirectory, expectedSha256.toLowerCase(java.util.Locale.ROOT));
+        return importInternal(source, privateDirectory, expectedSha256.toLowerCase(java.util.Locale.ROOT), () -> false);
+    }
+
+    /** Supports cooperative cancel while importing a large model from the Android document picker. */
+    static ImportedModel importVerified(InputStream source, File directory,
+                                        String expectedSha256, BooleanSupplier canceled)
+            throws IOException {
+        if (expectedSha256 == null || !expectedSha256.matches("[a-fA-F0-9]{64}")) {
+            throw new IOException("Ungültiger SHA-256-Referenzwert.");
+        }
+        if (canceled == null) throw new IOException("Abbruchprüfung fehlt.");
+        return importInternal(source, directory, expectedSha256.toLowerCase(java.util.Locale.ROOT), canceled);
     }
 
     static File importFrom(InputStream source, File privateDirectory) throws IOException {
-        return importInternal(source, privateDirectory, null).file;
+        return importInternal(source, privateDirectory, null, () -> false).file;
     }
 
     private static ImportedModel importInternal(InputStream source, File privateDirectory,
-                                                String expectedSha256) throws IOException {
+                                                String expectedSha256, BooleanSupplier canceled)
+            throws IOException {
+        requireNotCanceled(canceled);
         if (source == null) throw new IOException("Modell konnte nicht geöffnet werden.");
         if (privateDirectory == null || (!privateDirectory.isDirectory()
                 && !privateDirectory.mkdirs())) {
@@ -100,7 +114,11 @@ final class JarvisGgufModelStore {
             byte[] chunk = new byte[65536];
             try (FileOutputStream output = new FileOutputStream(partial)) {
                 int n;
-                while ((n = source.read(chunk)) != -1) {
+                while (true) {
+                    requireNotCanceled(canceled);
+                    n = source.read(chunk);
+                    requireNotCanceled(canceled);
+                    if (n == -1) break;
                     if (n == 0) continue;
                     if (written > MAX_MODEL_BYTES - n) {
                         throw new IOException("GGUF-Modell zu groß (max. 3 GiB).");
@@ -111,6 +129,7 @@ final class JarvisGgufModelStore {
                 }
                 output.getFD().sync();
             }
+            requireNotCanceled(canceled);
             if (written < MIN_MODEL_BYTES) {
                 throw new IOException("GGUF-Datei ist zu klein für ein lokales Sprachmodell.");
             }
@@ -121,6 +140,7 @@ final class JarvisGgufModelStore {
             if (expectedSha256 != null && !expectedSha256.equals(sha256)) {
                 throw new IOException("SHA-256-Prüfung fehlgeschlagen. Bestehendes Modell bleibt erhalten.");
             }
+            requireNotCanceled(canceled);
             try {
                 Files.move(partial.toPath(), destination.toPath(),
                         StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -131,6 +151,12 @@ final class JarvisGgufModelStore {
             return new ImportedModel(destination, sha256, written);
         } finally {
             if (!published && partial.exists()) partial.delete();
+        }
+    }
+
+    private static void requireNotCanceled(BooleanSupplier canceled) throws IOException {
+        if (canceled.getAsBoolean() || Thread.currentThread().isInterrupted()) {
+            throw new IOException("Modellimport abgebrochen.");
         }
     }
 
