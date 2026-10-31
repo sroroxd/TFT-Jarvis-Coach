@@ -1,5 +1,8 @@
 # JARVIS — verbindliche Zielarchitektur (30.10.2026)
 
+> **Priorität der weiteren Entwicklung:** [JARVIS-MASTER-SEQUENCE.md](JARVIS-MASTER-SEQUENCE.md) / [Issue #57](https://github.com/sroroxd/TFT-Jarvis-Coach/issues/57). Dieses Dokument beschreibt Architekturentscheidungen und Entwicklungshistorie; bei widersprüchlicher Reihenfolge gilt nach Freigabe des Masterplans dessen Gate-Plan. Bestehende Geräte- und CI-Nachweise bleiben unverändert gültig, offene Nachweise bleiben offen.
+
+
 ## Identität und Systemgrenze — Nutzerentscheidung (präzisiert 30.10.2026)
 **Zielprodukt ist EINE vollständig eigenständig benutzbare Android-App „JARVIS“.** Der Nutzer möchte **nicht gleichzeitig ChatGPT geöffnet halten**; die ChatGPT-App darf **weder Voraussetzung für die Bedienung noch Laufzeit-Abhängigkeit** von JARVIS sein. Der ChatGPT-Chat dient der Entwicklung und Planung, nicht als zweites im Alltag geöffnetes Frontend.
 

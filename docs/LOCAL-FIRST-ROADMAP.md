@@ -1,5 +1,8 @@
 # JARVIS LOCAL FIRST – Plan und erster Baustein
 
+> **Priorität der weiteren Entwicklung:** [JARVIS-MASTER-SEQUENCE.md](JARVIS-MASTER-SEQUENCE.md) / [Issue #57](https://github.com/sroroxd/TFT-Jarvis-Coach/issues/57). Dieses Dokument beschreibt Architekturentscheidungen und Entwicklungshistorie; bei widersprüchlicher Reihenfolge gilt nach Freigabe des Masterplans dessen Gate-Plan. Bestehende Geräte- und CI-Nachweise bleiben unverändert gültig, offene Nachweise bleiben offen.
+
+
 Ziel: ein natürlicher deutschsprachiger Assistent auf dem Galaxy S24 Ultra,
 ohne aktive ChatGPT-App, API-Schlüssel, Cloudkontingente und nutzungsabhängige Kosten.
 

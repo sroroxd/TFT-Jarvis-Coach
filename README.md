@@ -1,5 +1,13 @@
 # TFT JARVIS Coach
 
+## JARVIS: Entwicklungsziel und verbindliche Reihenfolge
+
+Das Primärziel ist **eine eigenständige deutsche, local-first JARVIS-Sprach-App** für das Galaxy S24 Ultra. Natürliche wechselseitige Gespräche und echte lokale KI kommen **vor** TFT-Spezialfunktionen. Das vorhandene TFT-Coaching ist ein späterer optionaler Skill. Ein CI-Build bestätigt noch keine funktionierende Geräte-KI oder Live-Konversation.
+
+**[JARVIS-Masterplan und objektive Abnahme](docs/JARVIS-MASTER-SEQUENCE.md)** · [Tracking-Issue #57](https://github.com/sroroxd/TFT-Jarvis-Coach/issues/57)
+
+Aktive Reihenfolge: **Offline-Text-KI → Offline-Freisprechen → Gesprächsunterbrechung/Kontext → lokale Skills → optional TFT → S24-Freigabe**. Aktuelle Experiment-/Testzweige und echte Nachweise stehen im Masterplan; keine automatische Release-Freigabe.
+
 Deutschsprachiger Android-Prototyp mit lokaler Bildschirmaufnahme, HUD-Erkennung,
 einem optionalen KI-Auswerter sowie einem schwebenden Bedienfeld.
 
