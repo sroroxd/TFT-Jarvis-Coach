@@ -5,8 +5,12 @@ einem optionalen KI-Auswerter sowie einem schwebenden Bedienfeld.
 
 ## APK und Updates
 
-Aktuelle, **einzeln herunterladbare APKs**:
+**Veröffentlichte, direkt installierbare APKs:**
 https://github.com/sroroxd/TFT-Jarvis-Coach/releases
+
+**CI-Testdateien und fehlgeschlagene Downloads** sind getrennt erfasst:
+[GitHub Actions, Artefakte und Linkregister](docs/GITHUB-ACTIONS-ARTEFAKTE.md).
+Ein erfolgreicher APK-Build bedeutet nicht automatisch, dass ein GitHub Release verfügbar ist.
 
 Ab `v0.9.0-beta1` werden Release-APKs mit derselben dauerhaften Signatur
 veröffentlicht. `v0.9.3-beta4` erhöht den Android-`versionCode` auf 33.
