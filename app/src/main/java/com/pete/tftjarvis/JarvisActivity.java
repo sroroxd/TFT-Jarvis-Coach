@@ -1,6 +1,7 @@
 package com.pete.tftjarvis;
 
 import android.Manifest;
+import android.content.Intent;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.os.Bundle;
@@ -112,6 +113,9 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_jarvis);
+        findViewById(R.id.jarvisOfflineLabButton).setOnClickListener(v ->
+                startActivity(new Intent(this, JarvisOfflineChatActivity.class)));
+
 
         commandInput = findViewById(R.id.jarvisCommand);
         output = findViewById(R.id.jarvisOutput);
