@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = 'TFTJarvisCoach'
-include ':app'
+include ':app', ':jarvis-core'
