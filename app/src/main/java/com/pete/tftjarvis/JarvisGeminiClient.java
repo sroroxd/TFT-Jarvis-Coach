@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -70,7 +69,8 @@ final class JarvisGeminiClient {
 
         HttpURLConnection conn = null;
         try {
-            conn = (HttpURLConnection) new URL(API_ROOT + "models/" + model + ":generateContent").openConnection();
+            conn = JarvisHttpsTransport.open(API_ROOT + "models/" + model + ":generateContent",
+                    "generativelanguage.googleapis.com");
             token.connection = conn;
             if (token.isCanceled()) throw new IOException("Abgebrochen.");
             conn.setConnectTimeout(12000);
@@ -132,8 +132,8 @@ final class JarvisGeminiClient {
     private static String listCompatibleModels(String apiKey,
             JarvisAiClient.CancelToken token) throws IOException {
         if (token.isCanceled()) throw new IOException("Abgebrochen.");
-        HttpURLConnection listing = (HttpURLConnection) new URL(
-                API_ROOT + "models?pageSize=100").openConnection();
+        HttpURLConnection listing = JarvisHttpsTransport.open(
+                API_ROOT + "models?pageSize=100", "generativelanguage.googleapis.com");
         try {
             token.connection = listing;
             listing.setConnectTimeout(7000);
