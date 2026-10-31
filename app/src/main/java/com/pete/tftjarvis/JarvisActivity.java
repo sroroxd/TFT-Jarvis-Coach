@@ -615,7 +615,7 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
         dialog.setOnShowListener(unused -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
                 .setOnClickListener(v -> {
                     if (!agree.isChecked()) {
-                        output.setText("Keine Freigabe erteilt. KI bleibt unverändert.");
+                        agree.setError("Bitte zuerst die Datenübertragung bestätigen.");
                         return;
                     }
                     try {
@@ -626,26 +626,23 @@ public final class JarvisActivity extends Activity implements LocalControlCapabi
                                     ? JarvisSecretStore.GEMINI : JarvisSecretStore.OPENAI);
                         String newKey = field.getText().toString().trim();
                         if (newKey.isEmpty()) {
-                            output.setText("API-Schlüssel fehlt. Bei Hugging Face zuerst "
-                                    + "einen Token auf huggingface.co/settings/tokens erstellen.");
+                            field.setError("Token fehlt. Erstelle ihn auf huggingface.co/settings/tokens.");
                             return;
                         }
                         if (newKey.length() < 12 || newKey.length() > 1024) {
-                            output.setText("API-Schlüssel/Token hat eine ungültige Länge.");
+                            field.setError("API-Schlüssel/Token hat eine ungültige Länge.");
                             return;
                         }
                         if (JarvisSecretStore.HUGGING_FACE.equals(selectedProvider)) {
                             if (!newKey.matches("hf_[A-Za-z0-9_-]{9,253}")) {
-                                output.setText("Ungültiger Hugging-Face-Token. "
-                                        + "Er muss mit hf_ beginnen.");
+                                field.setError("Hugging-Face-Token muss mit hf_ beginnen.");
                                 return;
                             }
                             try {
                                 JarvisHuggingFaceClient.normalizeModel(
                                         modelField.getText().toString());
                             } catch (IllegalArgumentException invalidModel) {
-                                output.setText("Hugging-Face-Modell-ID ungültig. "
-                                        + "Format: Organisation/Modell.");
+                                modelField.setError("Modell-ID ungültig: Organisation/Modell.");
                                 return;
                             }
                         }
