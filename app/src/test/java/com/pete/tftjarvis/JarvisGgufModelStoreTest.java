@@ -8,6 +8,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.Assert.*;
 
 public class JarvisGgufModelStoreTest {
@@ -94,6 +95,41 @@ public class JarvisGgufModelStoreTest {
             fail("Incorrect expected checksum must reject before publishing.");
         } catch (IOException expected) {
             assertEquals(first.bytes, new File(root, "local-model.gguf").length());
+            assertTrue(JarvisGgufModelStore.isImported(root));
+            assertFalse(new File(root, "local-model.gguf.partial").exists());
+        }
+    }
+
+    @Test public void interruptedImportRetainsPreviousFileAndRemovesPartial() throws Exception {
+        File root = tmp.newFolder();
+        byte[] original = model();
+        JarvisGgufModelStore.ImportedModel first = JarvisGgufModelStore.importVerified(
+                new ByteArrayInputStream(original), root);
+        AtomicInteger checks = new AtomicInteger();
+        try {
+            JarvisGgufModelStore.importVerified(
+                    new ByteArrayInputStream(original), root,
+                    first.sha256, () -> checks.incrementAndGet() > 8);
+            fail("Cancelled model import must not be published.");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("abgebrochen"));
+            assertTrue(checks.get() > 8);
+            assertEquals(first.bytes, new File(root, "local-model.gguf").length());
+            assertTrue(JarvisGgufModelStore.isImported(root));
+            assertFalse(new File(root, "local-model.gguf.partial").exists());
+        }
+    }
+
+    @Test public void cancellationBeforeCopyDoesNotTouchExistingModel() throws Exception {
+        File root = tmp.newFolder();
+        JarvisGgufModelStore.ImportedModel old = JarvisGgufModelStore.importVerified(
+                new ByteArrayInputStream(model()), root);
+        try {
+            JarvisGgufModelStore.importVerified(
+                    new ByteArrayInputStream(model()), root, old.sha256, () -> true);
+            fail("Already-cancelled import was accepted.");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("abgebrochen"));
             assertTrue(JarvisGgufModelStore.isImported(root));
             assertFalse(new File(root, "local-model.gguf.partial").exists());
         }
