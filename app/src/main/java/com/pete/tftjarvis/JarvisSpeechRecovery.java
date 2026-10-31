@@ -85,7 +85,11 @@ final class JarvisSpeechRecovery {
         if (error == PERMISSION || error == PERMISSION_DENIED || error == AUDIO) {
             return "Prüfe Mikrofonzugriff und ob eine andere App das Mikrofon verwendet.";
         }
-        if (error == TOO_MANY_REQUESTS || error == BUSY || error == CLIENT
+        if (error == TOO_MANY_REQUESTS) {
+            return "Android begrenzt die Spracherkennung. Warte mindestens zwei Minuten; "
+                    + "schnelles erneutes Aktivieren verlängert die Störung möglicherweise.";
+        }
+        if (error == BUSY || error == CLIENT
                 || error == SERVER || error == SERVER_DISCONNECTED) {
             return "Warte kurz und aktiviere Freisprechen erneut; prüfe den Android-Sprachdienst.";
         }
